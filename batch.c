@@ -277,7 +277,7 @@ unsigned char read_batch_flags(void)
 
 void read_batch_flist_info(struct file_struct **fptr)
 {
-#ifdef NOSHELLORSERVER
+#if SIZEOF_INT == 2
 	int32 int_str_len;
 #else
 	int int_str_len;

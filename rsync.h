@@ -652,7 +652,7 @@ const char *get_panic_action(void);
 
 #define UNUSED(x) x __attribute__((__unused__))
 
-#ifdef NOSHELLORSERVER
+#ifdef DISABLE_FORK
 #include "lib/picoro.h"
 
 extern coro recv_files_coro;

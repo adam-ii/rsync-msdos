@@ -263,7 +263,7 @@ int open_socket_out_wrapped (char *host,
 			     const char *bind_address,
 			     int af_hint)
 {
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_SERVER
 	char *prog;
 
 	if ((prog = getenv ("RSYNC_CONNECT_PROG")) != NULL) 
@@ -276,7 +276,7 @@ int open_socket_out_wrapped (char *host,
 
 
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_SERVER
 /**
  * Open a socket of the specified type, port and address for incoming data
  *

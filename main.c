@@ -38,7 +38,7 @@ struct pid_status {
 
 static void show_malloc_stats(void);
 
-#ifndef MSDOS
+#ifndef DISABLE_FORK
 /****************************************************************************
 wait for a process to exit, calling io_flush while waiting
 ****************************************************************************/
@@ -90,7 +90,7 @@ static void report(int f)
 		show_flist_stats();
 	}
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_SERVER
 	if (am_daemon) {
 		log_exit(0, __FILE__, __LINE__);
 		if (f == -1 || !am_sender) return;
@@ -98,7 +98,7 @@ static void report(int f)
 #endif
 
 	send_stats = verbose || (remote_version >= 20);
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_SERVER
 	if (am_server) {
 		if (am_sender && send_stats) {
 			int64 w;
@@ -196,7 +196,7 @@ static void show_malloc_stats(void)
 }
 
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_FORK
 /* Start the remote shell.   cmd may be NULL to use the default. */
 static pid_t do_cmd(char *cmd,char *machine,char *user,char *path,int *f_in,int *f_out)
 {
@@ -270,9 +270,14 @@ static pid_t do_cmd(char *cmd,char *machine,char *user,char *path,int *f_in,int 
 	}
 
 	if (local_server) {
+#ifdef DISABLE_SERVER
+		rprintf(FERROR, "\nLocal server is disabled.\n");
+		exit_cleanup(RERR_UNSUPPORTED);
+#else
 		if (read_batch)
 		    create_flist_from_batch(); /* sets batch_flist */
 		ret = local_child(argc, args, f_in, f_out, child_main);
+#endif
 	} else {
 		ret = piped_child(args,f_in,f_out);
 	}
@@ -342,7 +347,7 @@ static char *get_local_name(struct file_list *flist,char *name)
 
 
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_SERVER
 static void do_server_sender(int f_in, int f_out, int argc,char *argv[])
 {
 	int i;
@@ -394,7 +399,7 @@ static void do_server_sender(int f_in, int f_out, int argc,char *argv[])
 #endif
 
 
-#ifdef NOSHELLORSERVER
+#ifdef DISABLE_FORK
 coro recv_files_coro;
 
 struct recv_file_coroutine_args
@@ -430,12 +435,12 @@ void *recv_files_coroutine(void *args)
 
 static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
 {
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_FORK
 	int pid;
 #endif
 	int status=0;
 	int recv_pipe[2];
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_FORK
 	int error_pipe[2];
 #else
 	struct recv_file_coroutine_args coro_args;
@@ -456,7 +461,7 @@ static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
 		}
 	}
 
-#ifdef NOSHELLORSERVER
+#ifdef DISABLE_FORK
 	/* On systems without pipe(), create an in-memory FIFO for the recv pipe */
 	if (dos_pipe_open(recv_pipe, 64) < 0) {
 		rprintf(FERROR,"dos_pipe_open failed in do_recv\n");
@@ -476,7 +481,7 @@ static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
   
 	io_flush();
 
-#ifdef NOSHELLORSERVER
+#ifdef DISABLE_FORK
 	/* On systems without fork(), create a co-routine to interleave execution of
 	   generate_files and recv_files */
 	coro_args.f_in = f_in;
@@ -527,7 +532,7 @@ static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
 	generate_files(f_out,flist,local_name,recv_pipe[0]);
 
 	read_int(recv_pipe[0]);
-#ifdef NOSHELLORSERVER
+#ifdef DISABLE_FORK
 	dos_close_fd(recv_pipe[0]);
 #else
 	close(recv_pipe[0]);
@@ -539,7 +544,7 @@ static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
 	io_flush();
 
 	io_set_error_fd(-1);
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_FORK
 	kill(pid, SIGUSR2);
 	wait_process(pid, &status);
 #endif
@@ -547,7 +552,7 @@ static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
 }
 
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_SERVER
 static void do_server_recv(int f_in, int f_out, int argc,char *argv[])
 {
 	int status;
@@ -691,7 +696,7 @@ int client_run(int f_in, int f_out, pid_t pid, int argc, char *argv[])
 			/* final goodbye message */		
 			read_int(f_in);
 		}
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_FORK
 		if (pid != -1) {
 			if (verbose > 3)
 				rprintf(FINFO,"client_run waiting on %d\n", (int) pid);
@@ -734,7 +739,7 @@ int client_run(int f_in, int f_out, pid_t pid, int argc, char *argv[])
 	local_name = get_local_name(flist,argv[0]);
 	
 	status2 = do_recv(f_in,f_out,flist,local_name);
-#ifndef NOSHELLORSERVER	
+#ifndef DISABLE_FORK	
 	if (pid != -1) {
 		if (verbose > 3)
 			rprintf(FINFO,"client_run2 waiting on %d\n", (int) pid);
@@ -795,7 +800,7 @@ static int start_client(int argc, char *argv[])
 	char *shell_path = NULL;
 	char *shell_user = NULL;
 	int ret;
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_FORK
 	pid_t pid;
 	int f_in,f_out;
 #endif
@@ -943,7 +948,7 @@ static int start_client(int argc, char *argv[])
 		list_only = 1;
 	}
 	
-#ifdef NOSHELLORSERVER
+#ifdef DISABLE_FORK
 	usage(FERROR);
 	rprintf(FERROR, "\nRemote-shell connections are not supported on this system.\n");
 	exit_cleanup(RERR_SYNTAX);
@@ -972,7 +977,7 @@ static int start_client(int argc, char *argv[])
 }
 
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_FORK
 static RETSIGTYPE sigusr1_handler(int UNUSED(val)) {
 	exit_cleanup(RERR_SIGNAL);
 }
@@ -1074,7 +1079,7 @@ int main(int argc,char *argv[])
 	orig_argc = argc;
 	orig_argv = argv;
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_FORK
 	signal(SIGUSR1, sigusr1_handler);
 	signal(SIGUSR2, sigusr2_handler);
 	signal(SIGCHLD, sigchld_handler);
@@ -1129,7 +1134,7 @@ int main(int argc,char *argv[])
 	    write_batch_argvs_file(orig_argc, orig_argv);
 	}
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_SERVER
 	if (am_daemon && !am_server)
 		return daemon_main();
 #endif
@@ -1149,7 +1154,7 @@ int main(int argc,char *argv[])
 	}
 #endif
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_SERVER
 	if (am_server) {
 		set_nonblocking(STDIN_FILENO);
 		set_nonblocking(STDOUT_FILENO);

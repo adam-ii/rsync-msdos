@@ -48,7 +48,7 @@ static void base64_encode(char *buf, int len, char *out)
 	}
 }
 
-#ifndef MSDOS
+#ifndef DISABLE_SERVER
 /* create a 16 byte challenge buffer */
 static void gen_challenge(char *addr, char *challenge)
 {
@@ -196,7 +196,7 @@ static void generate_hash(char *in, char *challenge, char *out)
 	base64_encode(buf, 16, out);
 }
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_SERVER
 /* possible negotiate authentication with the client. Use "leader" to
    start off the auth if necessary 
 

@@ -74,7 +74,7 @@ void set_blocking(int fd)
 }
 
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_FORK
 /**
  * Create a file descriptor pair - like pipe() but use socketpair if
  * possible (because of blocking issues on pipes).
@@ -398,7 +398,7 @@ int robust_rename(char *from, char *to)
 }
 
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_FORK
 static pid_t all_pids[10];
 static int num_pids;
 
@@ -475,7 +475,7 @@ int name_to_gid(char *name, gid_t *gid)
 }
 
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_SERVER
 /** Lock a byte range in a open file */
 int lock_range(int fd, int offset, int len)
 {

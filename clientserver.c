@@ -200,7 +200,7 @@ int start_inband_exchange(char *user, char *path, int f_in, int f_out, int argc)
 
 
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_SERVER
 static int rsync_module(int f_in, int f_out, int i)
 {
 	int argc=0;

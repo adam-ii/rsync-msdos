@@ -20,7 +20,7 @@
 #include "rsync.h"
 
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_SERVER
 /****************************************************************************
 simple routine to do connection counting
 ****************************************************************************/

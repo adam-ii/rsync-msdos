@@ -38,8 +38,8 @@ OBJS3=progress.o pipe.o
 DAEMON_OBJ = params.o loadparm.o clientserver.o access.o connection.o authenticate.o
 popt_OBJS=popt/findme.o  popt/popt.o  popt/poptconfig.o \
 	popt/popthelp.o popt/poptparse.o
-noserver_OBJS=lib/picoro.o lib/ringbuffer.o dos.o
-OBJS=$(OBJS1) $(OBJS2) $(OBJS3) $(DAEMON_OBJ) $(LIBOBJ) @BUILD_ZLIB@ @BUILD_POPT@ @BUILD_NOSERVER@
+nofork_OBJS=lib/picoro.o lib/ringbuffer.o dos.o
+OBJS=$(OBJS1) $(OBJS2) $(OBJS3) $(DAEMON_OBJ) $(LIBOBJ) @BUILD_ZLIB@ @BUILD_POPT@ @BUILD_NOFORK@
 
 TLS_OBJ = tls.o syscall.o lib/permstring.o
 

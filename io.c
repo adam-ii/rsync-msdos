@@ -222,7 +222,7 @@ static int read_timeout (int fd, char *buf, size_t len)
 
 		errno = 0;
 
-#ifdef NOSHELLORSERVER
+#ifdef DISABLE_FORK
 		count = dos_select(fd_count, &fds, NULL, NULL, &tv);
 #else
 		count = select(fd_count, &fds, NULL, NULL, &tv);
@@ -245,7 +245,7 @@ static int read_timeout (int fd, char *buf, size_t len)
 
 		if (!FD_ISSET(fd, &fds)) continue;
 
-#ifdef NOSHELLORSERVER
+#ifdef DISABLE_FORK
 		n = dos_read_fd(fd, buf, len);
 #else
 		n = read(fd, buf, len);
@@ -490,7 +490,7 @@ static void writefd_unbuffered(int fd,char *buf,size_t len)
 
 		errno = 0;
 
-#ifdef NOSHELLORSERVER
+#ifdef DISABLE_FORK
 		count = dos_select(fd_count+1,
 #else
 		count = select(fd_count+1,
@@ -517,7 +517,7 @@ static void writefd_unbuffered(int fd,char *buf,size_t len)
 		if (FD_ISSET(fd, &w_fds)) {
 			int ret;
 			size_t n = len-total;
-#ifdef NOSHELLORSERVER
+#ifdef DISABLE_FORK
 			ret = dos_write_fd(fd,buf+total,n);
 #else
 			ret = write(fd,buf+total,n);

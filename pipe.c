@@ -21,7 +21,7 @@
 
 #include "rsync.h"
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_FORK
 /**
  * Create a child connected to use on stdin/stdout.
  *

@@ -95,7 +95,7 @@ void _exit_cleanup(int code, const char *file, int line)
 	}
 	inside_cleanup++;
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_FORK
 	signal(SIGUSR1, SIG_IGN);
 	signal(SIGUSR2, SIG_IGN);
 #endif
@@ -104,7 +104,7 @@ void _exit_cleanup(int code, const char *file, int line)
 		rprintf(FINFO,"_exit_cleanup(code=%d, file=%s, line=%d): entered\n", 
 			code, file, line);
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_FORK
 	if (cleanup_child_pid != -1) {
 		int status;
 		if (waitpid(cleanup_child_pid, &status, WNOHANG) == cleanup_child_pid) {
@@ -125,7 +125,7 @@ void _exit_cleanup(int code, const char *file, int line)
 	io_flush();
 	if (cleanup_fname)
 		do_unlink(cleanup_fname);
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_FORK
 	if (code) {
 		kill_all(SIGUSR1);
 	}

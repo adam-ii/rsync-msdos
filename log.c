@@ -147,7 +147,7 @@ static void logit(int priority, char *buf)
 	}
 }
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_SERVER
 void log_init(void)
 {
 	int options = LOG_PID;
@@ -248,7 +248,7 @@ void rwrite(enum logcode code, char *buf, int len)
 		return;
 	}
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_SERVER
 	/* otherwise, if in daemon mode and either we are not a server
 	 *  (that is, we are not running --daemon over a remote shell) or
 	 *  the log has already been initialised, log the message on this
