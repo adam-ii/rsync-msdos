@@ -29,6 +29,7 @@
 extern int verbose;
 
 
+#ifndef NOSHELLORSERVER
 /****************************************************************************
 Set a fd into nonblocking mode
 ****************************************************************************/
@@ -223,6 +224,7 @@ pid_t local_child(int argc, char **argv,int *f_in,int *f_out)
   
 	return pid;
 }
+#endif
 
 
 
@@ -462,6 +464,13 @@ int robust_unlink(char *fname)
 
 int robust_rename(char *from, char *to)
 {
+#ifdef NOSHELLORSERVER
+	if (do_rename(from, to) == 0)
+		return 0;
+	if (robust_unlink(to) != 0)
+		return -1;
+	return do_rename(from, to);
+#else
 #ifndef ETXTBSY
 	return do_rename(from, to);
 #else
@@ -472,9 +481,11 @@ int robust_rename(char *from, char *to)
 		return -1;
 	return do_rename(from, to);
 #endif
+#endif
 }
 
 
+#ifndef NOSHELLORSERVER
 static pid_t all_pids[10];
 static int num_pids;
 
@@ -517,6 +528,7 @@ void kill_all(int sig)
 		kill(p, sig);
 	}
 }
+#endif
 
 
 /* turn a user name into a uid */
@@ -546,6 +558,7 @@ int name_to_gid(char *name, gid_t *gid)
 }
 
 
+#ifndef NOSHELLORSERVER
 /* lock a byte range in a open file */
 int lock_range(int fd, int offset, int len)
 {
@@ -627,7 +640,10 @@ void glob_expand(char *base1, char **argv, int *argc, int maxargs)
 	free(s);
 	free(base);
 }
+#endif
 
+#ifndef NOSHELLORSERVER
+// not used
 /*******************************************************************
   convert a string to lower case
 ********************************************************************/
@@ -638,9 +654,17 @@ void strlower(char *s)
 		s++;
 	}
 }
+#endif
 
+#ifdef NOSHELLORSERVER
+// cannot have this function as it gets called from clib because
+// the dos linker cannot decide between realloc and Realloc
+void *do_realloc(void *p, int size)
+{
+#else
 void *Realloc(void *p, int size)
 {
+#endif
 	if (!p) return (void *)malloc(size);
 	return (void *)realloc(p, size);
 }
@@ -882,7 +906,7 @@ static unsigned long msdiff(struct timeval *t1, struct timeval *t2)
 static void rprint_progress(OFF_T ofs, OFF_T size, struct timeval *now,
 			    int is_last)
 {
-    int           pct  = (ofs == size) ? 100 : (int)((100.0*ofs)/size);
+    int32		pct  = (ofs == size) ? 100 : (int)((100.0*ofs)/size);
     unsigned long diff = msdiff(&start_time, now);
     double        rate = diff ? (double) (ofs-start_ofs) * 1000.0 / diff / 1024.0 : 0;
     const char    *units;
@@ -894,7 +918,7 @@ static void rprint_progress(OFF_T ofs, OFF_T size, struct timeval *now,
     double        remain = is_last
                         ? (double) diff / 1000.0
                         : rate ? (double) (size-ofs) / rate / 1000.0 : 0.0;
-    int 	  remain_h, remain_m, remain_s;
+    int32 	  remain_h, remain_m, remain_s;
 
     if (rate > 1024*1024) {
 	    rate /= 1024.0 * 1024.0;
@@ -906,11 +930,11 @@ static void rprint_progress(OFF_T ofs, OFF_T size, struct timeval *now,
 	    units = "kB/s";
     }
 
-    remain_s = (int) remain % 60;
-    remain_m = (int) (remain / 60.0) % 60;
-    remain_h = (int) (remain / 3600.0);
+    remain_s = (int32) remain % 60;
+    remain_m = (int32) (remain / 60.0) % 60;
+    remain_h = (int32) (remain / 3600.0);
     
-    rprintf(FINFO, "%12.0f %3d%% %7.2f%s %4d:%02d:%02d%s",
+    rprintf(FINFO, "%12.0f %3ld%% %7.2f%s %4ld:%02ld:%02ld%s",
 	    (double) ofs, pct, rate, units,
 	    remain_h, remain_m, remain_s,
 	    is_last ? "\n" : "\r");
@@ -955,6 +979,8 @@ void show_progress(OFF_T ofs, OFF_T size)
 	}
 }
 
+#ifndef NOSHELLORSERVER
+// not used
 /* determine if a symlink points outside the current directory tree */
 int unsafe_symlink(char *dest, char *src)
 {
@@ -1002,6 +1028,7 @@ int unsafe_symlink(char *dest, char *src)
 	return (depth < 0);
 }
 
+#endif
 
 /****************************************************************************
   return the date and time as a string
@@ -1073,6 +1100,7 @@ int cmp_modtime(time_t file1, time_t file2)
 	return 1;
 }
 
+#ifndef NOSHELLORSERVER
 
 #ifdef __INSURE__XX
 #include <dlfcn.h>
@@ -1105,4 +1133,5 @@ int _Insure_trap_error(int a1, int a2, int a3, int a4, int a5, int a6)
 
 	return ret;
 }
+#endif
 #endif

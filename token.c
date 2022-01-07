@@ -18,14 +18,19 @@
 */
 
 #include "rsync.h"
+
+#ifndef NOSHELLORSERVER
 #include "zlib/zlib.h"
 
 extern int do_compression;
 static int compression_level = Z_DEFAULT_COMPRESSION;
 
+#endif
+
 /* determine the compression level based on a wildcard filename list */
 void set_compression(char *fname)
 {
+#ifndef NOSHELLORSERVER
 	extern int module_id;
 	char *dont;
 	char *tok;
@@ -58,12 +63,18 @@ void set_compression(char *fname)
 	}
 	free(dont);
 	free(fname);
+#endif
 }
 
 /* non-compressing recv token */
 static int simple_recv_token(int f,char **data)
 {
+#ifdef NOSHELLORSERVER
+// the CHUNK_SIZE at the other end (32bit) will be 32768 which is too large for a 16bit int.
+	static int32 residue;
+#else
 	static int residue;
+#endif
 	static char *buf;
 	int n;
 
@@ -73,7 +84,12 @@ static int simple_recv_token(int f,char **data)
 	}
 
 	if (residue == 0) {
+#ifdef NOSHELLORSERVER
+// the CHUNK_SIZE at the other end (32bit) will be 32768 which is too large for a 16bit int.
+		int32 i = read_int(f);
+#else
 		int i = read_int(f);
+#endif
 		if (i <= 0) return i;
 		residue = i;
 	}
@@ -117,6 +133,7 @@ static void simple_send_token(int f,int token,
 }
 
 
+#ifndef NOSHELLORSERVER
 /* Flag bytes in compressed stream are encoded as follows: */
 #define END_FLAG	0	/* that's all folks */
 #define TOKEN_LONG	0x20	/* followed by 32-bit token number */
@@ -178,13 +195,13 @@ send_deflated_token(int f, int token,
 		r = run_start - last_run_end;
 		n = last_token - run_start;
 		if (r >= 0 && r <= 63) {
-			write_byte(f, (n==0? TOKEN_REL: TOKENRUN_REL) + r);
+			write_byte(f, (unsigned char)((n==0? TOKEN_REL: TOKENRUN_REL) + r));
 			if (write_batch) { /* dw */
 			    temp_byte = (char)( (n==0? TOKEN_REL: TOKENRUN_REL) + r);
 			    write_batch_delta_file(&temp_byte,sizeof(char));
 			}
 		} else {
-			write_byte(f, (n==0? TOKEN_LONG: TOKENRUN_LONG));
+			write_byte(f, (unsigned char)(n==0? TOKEN_LONG: TOKENRUN_LONG));
 			write_int(f, run_start);
 			if (write_batch) { /* dw */
 			    temp_byte = (char)(n==0? TOKEN_LONG: TOKENRUN_LONG);
@@ -193,8 +210,8 @@ send_deflated_token(int f, int token,
 			}
 		}
 		if (n != 0) {
-			write_byte(f, n);
-			write_byte(f, n >> 8);
+			write_byte(f, (unsigned char)n);
+			write_byte(f, (unsigned char)(n >> 8));
 			if (write_batch) { /* dw */
 			    write_batch_delta_file((char *)&n,sizeof(char));
 			    temp_byte = (char) n >> 8;
@@ -516,3 +533,36 @@ void see_token(char *data, int toklen)
 	if (do_compression)
 		see_deflate_token(data, toklen);
 }
+
+#else
+
+/*
+ * transmit a verbatim buffer of length n followed by a token 
+ * If token == -1 then we have reached EOF 
+ * If n == 0 then don't send a buffer
+ */
+void send_token(int f,int token,struct map_struct *buf,OFF_T offset,
+		int n,int toklen)
+{
+	simple_send_token(f,token,buf,offset,n);
+}
+
+
+/*
+ * receive a token or buffer from the other end. If the reurn value is >0 then
+ * it is a data buffer of that length, and *data will point at the data.
+ * if the return value is -i then it represents token i-1
+ * if the return value is 0 then the end has been reached
+ */
+int recv_token(int f,char **data)
+{
+	return(simple_recv_token(f,data));
+}
+
+/*
+ * look at the data corresponding to a token, if necessary
+ */
+void see_token(char *data, int toklen)
+{
+}
+#endif

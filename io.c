@@ -96,9 +96,13 @@ void io_set_error_fd(int fd)
 static void read_error_fd(void)
 {
 	char buf[200];
-	size_t n;
 	int fd = io_error_fd;
+#ifdef NOSHELLORSERVER
+	int32 tag, len, n;
+#else
+	size_t n;
 	int tag, len;
+#endif
 
         /* io_error_fd is temporarily disabled -- is this meant to
          * prevent indefinite recursion? */
@@ -115,8 +119,13 @@ static void read_error_fd(void)
 		n = len;
 		if (n > (sizeof(buf)-1))
 			n = sizeof(buf)-1;
+#ifdef NOSHELLORSERVER
+		read_loop(fd, buf, (size_t)n);
+		rwrite((enum logcode)tag, buf, (size_t)n);
+#else
 		read_loop(fd, buf, n);
 		rwrite((enum logcode)tag, buf, n);
+#endif
 		len -= n;
 	}
 
@@ -218,7 +227,11 @@ static int read_timeout (int fd, char *buf, size_t len)
 
 		if (!FD_ISSET(fd, &fds)) continue;
 
+#ifdef NOSHELLORSERVER
+		n = recv(fd, buf, len, 0);
+#else
 		n = read(fd, buf, len);
+#endif
 
 		if (n > 0) {
 			buf += n;
@@ -267,7 +280,12 @@ static void read_loop (int fd, char *buf, size_t len)
 static int read_unbuffered(int fd, char *buf, size_t len)
 {
 	static size_t remaining;
+#ifdef NOSHELLORSERVER
+	int32	tag;
+	int		ret = 0;
+#else
 	int tag, ret = 0;
+#endif
 	char line[1024];
 
 	if (!io_multiplexing_in || fd != multiplex_in_fd)
@@ -285,7 +303,11 @@ static int read_unbuffered(int fd, char *buf, size_t len)
 		read_loop(fd, line, 4);
 		tag = IVAL(line, 0);
 
+#ifdef NOSHELLORSERVER
+		remaining = tag & 0xFFFFFFL;
+#else
 		remaining = tag & 0xFFFFFF;
+#endif
 		tag = tag >> 24;
 
 		if (tag == MPLEX_BASE)
@@ -341,7 +363,7 @@ int32 read_int(int f)
 
 	readfd(f,b,4);
 	ret = IVAL(b,0);
-	if (ret == (int32)0xffffffff) return -1;
+	if (ret == (int32)0xffffffffL) return -1;
 	return ret;
 }
 
@@ -349,10 +371,12 @@ int64 read_longint(int f)
 {
 	extern int remote_version;
 	int64 ret;
+#ifndef NO_INT64
 	char b[8];
+#endif
 	ret = read_int(f);
 
-	if ((int32)ret != (int32)0xffffffff) {
+	if ((int32)ret != (int32)0xffffffffL) {
 		return ret;
 	}
 
@@ -440,7 +464,11 @@ static void writefd_unbuffered(int fd,char *buf,size_t len)
 		if (FD_ISSET(fd, &w_fds)) {
 			int ret;
 			size_t n = len-total;
+#ifdef NOSHELLORSERVER
+			ret = send(fd, buf+total, n, 0);
+#else
 			ret = write(fd,buf+total,n);
+#endif
 
 			if (ret == -1 && errno == EINTR) {
 				continue;
@@ -468,10 +496,10 @@ static void writefd_unbuffered(int fd,char *buf,size_t len)
 			{
 			    tv.tv_sec = 0;
 			    tv.tv_usec = ret * 1000 / bwlimit;
-			    while (tv.tv_usec > 1000000)
+			    while (tv.tv_usec > 1000000L)
 			    {
 				tv.tv_sec++;
-				tv.tv_usec -= 1000000;
+				tv.tv_usec -= 1000000L;
 			    }
 			    select(0, NULL, NULL, NULL, &tv);
  			}
@@ -592,14 +620,14 @@ void write_longint(int f, int64 x)
 	extern int remote_version;
 	char b[8];
 
-	if (remote_version < 16 || x <= 0x7FFFFFFF) {
+	if (remote_version < 16 || x <= 0x7FFFFFFFL) {
 		write_int(f, (int)x);
 		return;
 	}
 
-	write_int(f, (int32)0xFFFFFFFF);
-	SIVAL(b,0,(x&0xFFFFFFFF));
-	SIVAL(b,4,((x>>32)&0xFFFFFFFF));
+	write_int(f, (int32)0xFFFFFFFFL);
+	SIVAL(b,0,(x&0xFFFFFFFFL));
+	SIVAL(b,4,((x>>32)&0xFFFFFFFFL));
 
 	writefd(f,b,8);
 }

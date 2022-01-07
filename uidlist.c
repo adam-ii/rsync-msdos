@@ -202,7 +202,7 @@ void send_uid_list(int f)
 		while (list) {
 			int len = strlen(list->name);
 			write_int(f, list->id);
-			write_byte(f, len);
+			write_byte(f, (unsigned char)len);
 			write_buf(f, list->name, len);
 			list = list->next;
 		}
@@ -217,7 +217,7 @@ void send_uid_list(int f)
 		while (list) {
 			int len = strlen(list->name);
 			write_int(f, list->id);
-			write_byte(f, len);
+			write_byte(f, (unsigned char)len);
 			write_buf(f, list->name, len);
 			list = list->next;
 		}

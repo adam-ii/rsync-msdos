@@ -177,6 +177,8 @@
 }
 #endif
 
+#ifndef NOSHELLORSERVER
+// not used
 /* some systems don't take the 2nd argument */
 int sys_gettimeofday(struct timeval *tv)
 {
@@ -186,3 +188,4 @@ int sys_gettimeofday(struct timeval *tv)
 	return gettimeofday(tv);
 #endif
 }
+#endif

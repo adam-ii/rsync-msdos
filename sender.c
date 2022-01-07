@@ -70,8 +70,13 @@ static struct sum_struct *receive_sums(int f)
 		offset += s->sums[i].len;
 
 		if (verbose > 3)
+#ifdef NOSHELLORSERVER
+			rprintf(FINFO,"chunk[%d] len=%d offset=%lu sum1=%08lx\n",
+				i,s->sums[i].len,(uint32)s->sums[i].offset,s->sums[i].sum1);
+#else
 			rprintf(FINFO,"chunk[%d] len=%d offset=%.0f sum1=%08x\n",
 				i,s->sums[i].len,(double)s->sums[i].offset,s->sums[i].sum1);
+#endif
 	}
 
 	s->flength = offset;

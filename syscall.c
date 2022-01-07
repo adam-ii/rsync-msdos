@@ -39,6 +39,7 @@ int do_unlink(char *fname)
 	return unlink(fname);
 }
 
+#ifndef NOSHELLORSERVER
 int do_symlink(char *fname1, char *fname2)
 {
 	if (dry_run) return 0;
@@ -46,6 +47,7 @@ int do_symlink(char *fname1, char *fname2)
 	return symlink(fname1, fname2);
 }
 
+#endif
 #if HAVE_LINK
 int do_link(char *fname1, char *fname2)
 {
@@ -55,12 +57,14 @@ int do_link(char *fname1, char *fname2)
 }
 #endif
 
+#ifndef NOSHELLORSERVER
 int do_lchown(const char *path, uid_t owner, gid_t group)
 {
 	if (dry_run) return 0;
 	CHECK_RO
 	return lchown(path, owner, group);
 }
+#endif
 
 #if HAVE_MKNOD
 int do_mknod(char *pathname, mode_t mode, dev_t dev)
@@ -132,17 +136,33 @@ void trim_trailing_slashes(char *name)
 
 int do_mkdir(char *fname, mode_t mode)
 {
+#ifdef NOSHELLORSERVER
+	int	status;
+#endif
+	
 	if (dry_run)
 		return 0;
 	CHECK_RO;
 	trim_trailing_slashes(fname);	
+#ifdef NOSHELLORSERVER
+	status = mkdir(fname);
+	if ((status == -1) && (errno == 0x11))
+		return(0);
+	else
+		return(status);
+#else
 	return mkdir(fname, mode);
+#endif
 }
 
 
 /* like mkstemp but forces permissions */
 int do_mkstemp(char *template, mode_t perms)
 {
+#ifdef NOSHELLORSERVER
+	char	*p;
+#endif
+
 	if (dry_run) return -1;
 	if (read_only) {errno = EROFS; return -1;}
 
@@ -158,7 +178,16 @@ int do_mkstemp(char *template, mode_t perms)
 		return fd;
 	}
 #else
+#ifdef NOSHELLORSERVER
+#ifdef __BORLANDC__
+	if ((p = mktemp(template)) == NULL) return -1;
+#else
+	if ((p = _mktemp(template)) == NULL) return -1;
+#endif
+	strcpy(template, p);
+#else
 	if (!mktemp(template)) return -1;
+#endif
 	return do_open(template, O_RDWR|O_EXCL|O_CREAT, perms);
 #endif
 }

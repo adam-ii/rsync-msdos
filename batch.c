@@ -277,7 +277,11 @@ unsigned char read_batch_flags()
 
 void read_batch_flist_info(struct file_struct **fptr)
 {
+#ifdef NOSHELLORSERVER
+	int32 int_str_len;
+#else
 	int int_str_len;
+#endif
 	char char_str_len[4];
 	char buff[256];
 	struct file_struct *file;
@@ -576,8 +580,13 @@ void show_flist(int index, struct file_struct **fptr)
 		rprintf(FINFO, "flist->flags=%#x\n", fptr[i]->flags);
 		rprintf(FINFO, "flist->modtime=%#lx\n",
 			(long unsigned) fptr[i]->modtime);
+#ifndef NOSHELLORSERVER
+		rprintf(FINFO, "flist->length=%lu\n",
+			(uint32) fptr[i]->length);
+#else
 		rprintf(FINFO, "flist->length=%.0f\n",
 			(double) fptr[i]->length);
+#endif
 		rprintf(FINFO, "flist->mode=%#o\n", (int) fptr[i]->mode);
 		rprintf(FINFO, "flist->basename=%s\n", fptr[i]->basename);
 		if (fptr[i]->dirname)

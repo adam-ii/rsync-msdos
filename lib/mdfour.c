@@ -28,7 +28,11 @@
 
 static struct mdfour *m;
 
+#ifdef NOSHELLORSERVER
+#define MASK32 (0xffffffffL)
+#else
 #define MASK32 (0xffffffff)
+#endif
 
 #define F(X,Y,Z) ((((X)&(Y)) | ((~(X))&(Z))))
 #define G(X,Y,Z) ((((X)&(Y)) | ((X)&(Z)) | ((Y)&(Z))))
@@ -36,8 +40,23 @@ static struct mdfour *m;
 #define lshift(x,s) (((((x)<<(s))&MASK32) | (((x)>>(32-(s)))&MASK32)))
 
 #define ROUND1(a,b,c,d,k,s) a = lshift((a + F(b,c,d) + M[k])&MASK32, s)
+#ifdef NOSHELLORSERVER
+#define ROUND2(a,b,c,d,k,s) a = lshift((a + G(b,c,d) + M[k] + 0x5A827999L)&MASK32,s)
+#define ROUND3(a,b,c,d,k,s) a = lshift((a + H(b,c,d) + M[k] + 0x6ED9EBA1L)&MASK32,s)
+#else
 #define ROUND2(a,b,c,d,k,s) a = lshift((a + G(b,c,d) + M[k] + 0x5A827999)&MASK32,s)
 #define ROUND3(a,b,c,d,k,s) a = lshift((a + H(b,c,d) + M[k] + 0x6ED9EBA1)&MASK32,s)
+#endif
+
+#ifdef TEST_MDFOUR
+void	displayInts(uint32 *pI)
+{
+	printf("%08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx\n",
+		pI[0], pI[1], pI[2], pI[3], pI[4], pI[5], pI[6], pI[7]);
+	printf("%08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx\n",
+		pI[8], pI[9], pI[10], pI[11], pI[12], pI[13], pI[14], pI[15]);
+}
+#endif
 
 /* this applies md4 to 64 byte chunks */
 static void mdfour64(uint32 *M)
@@ -87,11 +106,17 @@ static void mdfour64(uint32 *M)
 
 static void copy64(uint32 *M, unsigned char *in)
 {
+#ifndef NOSHELLORSERVER
 	int i;
 
 	for (i=0;i<16;i++)
 		M[i] = (in[i*4+3]<<24) | (in[i*4+2]<<16) |
 			(in[i*4+1]<<8) | (in[i*4+0]<<0);
+#else
+// borland c makes these signed as it shifts and or's
+// better to take advantage of the little endian anyway
+	memmove((unsigned char *)M, in, 64);
+#endif
 }
 
 static void copy4(unsigned char *out,uint32 x)
@@ -104,10 +129,17 @@ static void copy4(unsigned char *out,uint32 x)
 
 void mdfour_begin(struct mdfour *md)
 {
+#ifdef NOSHELLORSERVER
+	md->A = 0x67452301L;
+	md->B = 0xefcdab89L;
+	md->C = 0x98badcfeL;
+	md->D = 0x10325476L;
+#else
 	md->A = 0x67452301;
 	md->B = 0xefcdab89;
 	md->C = 0x98badcfe;
 	md->D = 0x10325476;
+#endif
 	md->totalN = 0;
 }
 
@@ -149,13 +181,25 @@ void mdfour_update(struct mdfour *md, unsigned char *in, int n)
 
 	while (n >= 64) {
 		copy64(M, in);
+#ifdef TEST_MDFOUR
+ 	displayInts(M);
+#endif
 		mdfour64(M);
+#ifdef TEST_MDFOUR
+ 	displayInts(M);
+#endif
 		in += 64;
 		n -= 64;
 		m->totalN += 64;
 	}
 
+#ifdef TEST_MDFOUR
+ 	displayInts(M);
+#endif
 	if (n) mdfour_tail(in, n);
+#ifdef TEST_MDFOUR
+ 	displayInts(M);
+#endif
 }
 
 
@@ -170,6 +214,8 @@ void mdfour_result(struct mdfour *md, unsigned char *out)
 }
 
 
+#ifndef NOSHELLORSERVER
+// not used
 void mdfour(unsigned char *out, unsigned char *in, int n)
 {
 	struct mdfour md;
@@ -177,14 +223,19 @@ void mdfour(unsigned char *out, unsigned char *in, int n)
 	mdfour_update(&md, in, n);
 	mdfour_result(&md, out);
 }
+#endif
 
 #ifdef TEST_MDFOUR
 static void file_checksum1(char *fname)
 {
 	int fd, i;
 	struct mdfour md;
+#ifdef NOSHELLORSERVER
+	unsigned char buf[8*1024], sum[16];
+#else
 	unsigned char buf[64*1024], sum[16];
 	
+#endif
 	fd = open(fname,O_RDONLY);
 	if (fd == -1) {
 		perror("fname");

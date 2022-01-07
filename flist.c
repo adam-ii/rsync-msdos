@@ -178,6 +178,19 @@ static void list_file_entry(struct file_struct *f)
 
 	permstring(perms, f->mode);
 
+#ifdef NOOSHELLORSERVER
+	if (preserve_links && S_ISLNK(f->mode)) {
+		rprintf(FINFO, "%s %lu %s %s -> %s\n",
+			perms,
+			(uint32) f->length, timestring(f->modtime),
+			f_name(f), f->link);
+	} else {
+		rprintf(FINFO, "%s %lu %s %s\n",
+			perms,
+			(uint32) f->length, timestring(f->modtime),
+			f_name(f));
+	}
+#else
 	if (preserve_links && S_ISLNK(f->mode)) {
 		rprintf(FINFO, "%s %11.0f %s %s -> %s\n",
 			perms,
@@ -189,6 +202,7 @@ static void list_file_entry(struct file_struct *f)
 			(double) f->length, timestring(f->modtime),
 			f_name(f));
 	}
+#endif
 }
 
 
@@ -263,15 +277,15 @@ static void set_filesystem(char *fname)
 }
 
 
-static int to_wire_mode(mode_t mode)
+static int32 to_wire_mode(mode_t mode)
 {
 	if (S_ISLNK(mode) && (_S_IFLNK != 0120000)) {
 		return (mode & ~(_S_IFMT)) | 0120000;
 	}
-	return (int) mode;
+	return (int32) mode;
 }
 
-static mode_t from_wire_mode(int mode)
+static mode_t from_wire_mode(int32 mode)
 {
 	if ((mode & (_S_IFMT)) == 0120000 && (_S_IFLNK != 0120000)) {
 		return (mode & ~(_S_IFMT)) | _S_IFLNK;
@@ -307,11 +321,19 @@ static void flist_expand(struct file_list *flist)
 		else
 			new_ptr = malloc(new_bytes);
 
+#ifdef NOSHELLORSERVER
+		if (verbose >= 2) {
+			rprintf(FINFO, "expand file_list to %lu bytes, did %s move\n",
+				(uint32) new_bytes,
+				(new_ptr == flist->files) ? " not" : "");
+		}
+#else
 		if (verbose >= 2) {
 			rprintf(FINFO, "expand file_list to %.0f bytes, did%s move\n",
 				(double) new_bytes,
 				(new_ptr == flist->files) ? " not" : "");
 		}
+#endif
 		
 		flist->files = (struct file_struct **) new_ptr;
 
@@ -376,29 +398,29 @@ static void send_file_entry(struct file_struct *file, int f,
 
 	write_byte(f, flags);
 	if (flags & SAME_NAME)
-		write_byte(f, l1);
+		write_byte(f, (unsigned char)l1);
 	if (flags & LONG_NAME)
 		write_int(f, l2);
 	else
-		write_byte(f, l2);
+		write_byte(f, (unsigned char)l2);
 	write_buf(f, fname + l1, l2);
 
 	write_longint(f, file->length);
 	if (!(flags & SAME_TIME))
-		write_int(f, (int) file->modtime);
+		write_int(f, file->modtime);
 	if (!(flags & SAME_MODE))
 		write_int(f, to_wire_mode(file->mode));
 	if (preserve_uid && !(flags & SAME_UID)) {
 		add_uid(file->uid);
-		write_int(f, (int) file->uid);
+		write_int(f, file->uid);
 	}
 	if (preserve_gid && !(flags & SAME_GID)) {
 		add_gid(file->gid);
-		write_int(f, (int) file->gid);
+		write_int(f, file->gid);
 	}
 	if (preserve_devices && IS_DEVICE(file->mode)
 	    && !(flags & SAME_RDEV))
-		write_int(f, (int) file->rdev);
+		write_int(f, file->rdev);
 
 #if SUPPORT_LINKS
 	if (preserve_links && S_ISLNK(file->mode)) {
@@ -411,8 +433,8 @@ static void send_file_entry(struct file_struct *file, int f,
 	if (preserve_hard_links && S_ISREG(file->mode)) {
 		if (remote_version < 26) {
 			/* 32-bit dev_t and ino_t */
-			write_int(f, (int) file->dev);
-			write_int(f, (int) file->inode);
+			write_int(f, file->dev);
+			write_int(f, file->inode);
 		} else {
 			/* 64-bit dev_t and ino_t */
 			write_longint(f, file->dev);
@@ -1234,7 +1256,7 @@ static void clean_flist(struct file_list *flist, int strip_root)
 		return;
 
 	qsort(flist->files, flist->count,
-	      sizeof(flist->files[0]), (int (*)()) file_compare);
+	      sizeof(flist->files[0]), (int (*)(const void *, const void *)) file_compare);
 
 	for (i = 1; i < flist->count; i++) {
 		if (flist->files[i]->basename &&
@@ -1284,12 +1306,21 @@ static void clean_flist(struct file_list *flist, int strip_root)
 		return;
 
 	for (i = 0; i < flist->count; i++) {
+#ifdef NOSHELLORSERVER
+		rprintf(FINFO, "[%d] i=%d %s %s mode=0%o len=%lu\n",
+			(int)getpid(), i,
+			NS(flist->files[i]->dirname),
+			NS(flist->files[i]->basename),
+			(int)flist->files[i]->mode,
+			(uint32) flist->files[i]->length);
+#else
 		rprintf(FINFO, "[%d] i=%d %s %s mode=0%o len=%.0f\n",
 			(int) getpid(), i,
 			NS(flist->files[i]->dirname),
 			NS(flist->files[i]->basename),
 			(int) flist->files[i]->mode,
 			(double) flist->files[i]->length);
+#endif
 	}
 }
 

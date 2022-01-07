@@ -19,6 +19,11 @@
 
 #undef CAREFUL_ALIGNMENT
 
+#ifdef NOSHELLORSERVER
+// the default macros below for careful_alignment don't work with borland c
+#define CAREFUL_ALIGNMENT 0
+#endif
+
 /* we know that the x86 can handle misalignment and has the "right" 
    byteorder */
 #ifdef __i386__

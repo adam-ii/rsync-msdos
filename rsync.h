@@ -18,6 +18,7 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
+#include "config.h"
 
 #define False 0
 #define True 1
@@ -67,9 +68,17 @@
 #define RSYNC_PORT 873
 
 #define SPARSE_WRITE_SIZE (1024)
+#ifdef NOSHELLORSERVER
+// much of the code works with int, largest power of 2 is 16k
+// 4 chunks are held in a map so chunk size limited to 4k
+#define WRITE_SIZE (4*1024)
+#define CHUNK_SIZE (4*1024)
+#define MAX_MAP_SIZE (16*1024)
+#else
 #define WRITE_SIZE (32*1024)
 #define CHUNK_SIZE (32*1024)
 #define MAX_MAP_SIZE (256*1024)
+#endif
 #define IO_BUFFER_SIZE (4092)
 
 #define MAX_ARGS 1000
@@ -83,7 +92,6 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 
 #include "errcode.h"
 
-#include "config.h"
 
 /* The default RSYNC_RSH is always set in config.h, either to "remsh",
  * "rsh", or otherwise something specified by the user.  HAVE_REMSH
@@ -107,6 +115,10 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 
 #ifdef HAVE_SYS_SOCKET_H
 #include <sys/socket.h>
+#endif
+
+#ifdef NOSHELLORSERVER
+#include <dossup.h>
 #endif
 
 #ifdef HAVE_STRING_H
@@ -146,6 +158,12 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 #include <sys/filio.h>
 #endif
 
+#include	<io.h>
+
+#ifdef NOSHELLORSERVER
+#define getuid() 0
+#endif
+
 #include <signal.h>
 #ifdef HAVE_SYS_WAIT_H
 #include <sys/wait.h>
@@ -176,7 +194,7 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 #ifdef HAVE_FNMATCH
 #include <fnmatch.h>
 #else
-#include "lib/fnmatch.h"
+#include <lib/fnmatch.h>
 #endif
 
 #ifdef HAVE_GLOB_H
@@ -187,19 +205,23 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 #  include <malloc.h>
 #endif
 
-/* these are needed for the uid/gid mapping code */
-#include <pwd.h>
-#include <grp.h>
+// DOS linking is not able to distinguish between case
+// so the name is changed
+#define Realloc do_realloc
 
 #include <stdarg.h>
+
+#ifdef __BORLANDC__
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-#include <syslog.h>
-#include <sys/file.h>
+#endif
 
 #if HAVE_DIRENT_H
+#ifdef __BORLANDC__
 # include <dirent.h>
+#include <dir.h>
+#endif
 #else
 # define dirent direct
 # if HAVE_SYS_NDIR_H
@@ -230,6 +252,10 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 #define schar signed char
 #else
 #define schar char
+#endif
+
+#ifdef __BORLANDC__
+#define int32 long
 #endif
 
 #ifndef int32
@@ -412,6 +438,10 @@ struct stats {
 };
 
 
+#ifdef NOSHELLORSERVER
+#ifdef __BORLANDC__
+int flist_up(struct file_list *flist, int i);
+#else
 /* we need this function because of the silly way in which duplicate
    entries are handled in the file lists - we can't change this
    without breaking existing versions */
@@ -420,10 +450,20 @@ static inline int flist_up(struct file_list *flist, int i)
 	while (!flist->files[i]->basename) i++;
 	return i;
 }
+#endif
+#endif
 
+#ifdef NOSHELLORSERVER
+#include "byteord.h"
+#else
 #include "byteorder.h"
+#endif
 #include "lib/mdfour.h"
+#ifdef NOSHELLORSERVER
+#include "lib/permstr.h"
+#else
 #include "lib/permstring.h"
+#endif
 #include "lib/addrinfo.h"
 
 #include "proto.h"
@@ -614,7 +654,12 @@ inet_ntop(int af, const void *src, char *dst, size_t size);
 #endif /* !HAVE_INET_NTOP */
 
 #ifndef HAVE_INET_PTON
-int isc_net_pton(int af, const char *src, void *dst);
+int inet_pton(int af, const char *src, void *dst);
 #endif
 
 #define UNUSED(x) x __attribute__((__unused__))
+
+#if __BORLANDC__
+extern int select_s (int n, fd_set *r, fd_set *w, fd_set *x, struct timeval *t);
+#define select select_s
+#endif

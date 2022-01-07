@@ -143,6 +143,8 @@ static void logit(int priority, char *buf)
 	}
 }
 
+#ifdef NOSHELLORSERVER
+// not used
 void log_init(void)
 {
 	static int initialised;
@@ -208,6 +210,7 @@ void set_error_fd(int fd)
 	log_error_fd = fd;
 	set_nonblocking(log_error_fd);
 }
+#endif
 
 /* this is the underlying (unformatted) rsync debugging function. Call
    it with FINFO, FERROR or FLOG */
@@ -262,6 +265,12 @@ void rwrite(enum logcode code, char *buf, int len)
 		return;
 	}
 
+#ifdef _WINDOWS
+	if (code == FERROR)
+		logPrintf("ERROR! %s", buf);
+	else
+		logPrintf("INFO %s", buf);
+#else
 	if (code == FERROR) {
 		log_got_error = 1;
 		f = stderr;
@@ -279,6 +288,7 @@ void rwrite(enum logcode code, char *buf, int len)
 	if (fwrite(buf, len, 1, f) != 1) exit_cleanup(RERR_MESSAGEIO);
 
 	if (buf[len-1] == '\r' || buf[len-1] == '\n') fflush(f);
+#endif
 }
 		
 

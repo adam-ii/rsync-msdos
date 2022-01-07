@@ -23,7 +23,11 @@ int csum_length=2; /* initial value */
 
 #define CSUM_CHUNK 64
 
+#ifdef NOSHELLORSERVER
+int32 checksum_seed = 0;
+#else
 int checksum_seed = 0;
+#endif
 extern int remote_version;
 
 /*

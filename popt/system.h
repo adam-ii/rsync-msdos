@@ -19,6 +19,14 @@
 #include <unistd.h>
 #endif
 
+#ifdef NOSHELLORSERVER
+#include	<io.h>
+#include	<malloc.h>
+#define	X_OK	1
+#define getuid() 0
+#define geteuid() 0
+#endif
+
 #ifdef __NeXT
 /* access macros are not declared in non posix mode in unistd.h -
  don't try to use posix on NeXTstep 3.3 ! */
