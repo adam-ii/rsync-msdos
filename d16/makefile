@@ -78,12 +78,12 @@ PLIB_INCLUDES	= $(PL)\findme.h $(PL)\popt.h $(PL)\poptint.h $(PL)\system.h $(RT)
 
 INCLUDES	= $(ZL)\zconf.h $(ZL)\zlib.h $(PL)\popt.h $(LIB_INCLUDES)
 
-LIBOBJ		= compat.obj fnmatch.obj getaddri.obj inet_pto.obj mdfour.obj snprintf.obj\
+LIBOBJ		= lcompat.obj fnmatch.obj getaddri.obj inet_pto.obj mdfour.obj snprintf.obj\
 		inet_nto.obj getnamei.obj # permstr.obj 
 
 PLIBOBJ		= findme.obj popt.obj poptcfg.obj popthelp.obj poptprse.obj
 
-OBJS		= authent.obj batch.obj checksum.obj cleanup.obj clientsv.obj rcompat.obj dossup.obj \
+OBJS		= authent.obj batch.obj checksum.obj cleanup.obj clientsv.obj compat.obj dossup.obj \
 		exclude.obj fileio.obj flist.obj io.obj loadparm.obj log.obj main.obj match.obj \
 		options.obj rsync.obj sender.obj socket.obj syscall.obj token.obj uidlist.obj util.obj \
 		generat.obj receiver.obj backup.obj hlink.obj clientna.obj params.obj 
@@ -108,7 +108,7 @@ $(PLIB):	$(PLIBOBJ)
 
 rsync.exe: $(OBJS) $(RLIB) $(PLIB) $(WLIB)
 	$(LNK) $(LNK_FLGS) @&&!
-$(CSTART)+authent.obj+batch.obj+checksum.obj+cleanup.obj+clientsv.obj+rcompat.obj+\
+$(CSTART)+authent.obj+batch.obj+checksum.obj+cleanup.obj+clientsv.obj+compat.obj+\
 dossup.obj+exclude.obj+fileio.obj+flist.obj+io.obj+loadparm.obj+log.obj+\
 main.obj+match.obj+options.obj+rsync.obj+sender.obj+socket.obj+syscall.obj+token.obj+\
 uidlist.obj+util.obj+generat.obj+receiver.obj+backup.obj+hlink.obj+clientna.obj+params.obj 
@@ -118,7 +118,7 @@ $(RLIB)+$(WLIB)+$(PLIB)+$(CLIB)+$(MLIB)+$(ELIB)
 
 !
 
-compat.obj:		$(RL)\compat.c $(RLIB_INCLUDES)
+lcompat.obj:		$(RL)\lcompat.c $(RLIB_INCLUDES)
 fnmatch.obj:		$(RL)\fnmatch.c $(RLIB_INCLUDES)
 getaddri.obj:		$(RL)\getaddri.c $(RLIB_INCLUDES)
 inet_pto.obj:		$(RL)\inet_pto.c $(RLIB_INCLUDES)
@@ -149,7 +149,7 @@ log.obj:		$(RT)\log.c $(INCLUDES)
 main.obj:		$(RT)\main.c $(INCLUDES) 
 match.obj:		$(RT)\match.c $(INCLUDES) 
 options.obj:		$(RT)\options.c $(INCLUDES) 
-rcompat.obj:		$(RT)\rcompat.c $(INCLUDES) 
+compat.obj:		$(RT)\compat.c $(INCLUDES) 
 rsync.obj:		$(RT)\rsync.c $(INCLUDES) 
 sender.obj:		$(RT)\sender.c $(INCLUDES) 
 socket.obj:		$(RT)\socket.c $(INCLUDES) 
