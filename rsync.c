@@ -150,7 +150,6 @@ int set_perms(char *fname,struct file_struct *file,STRUCT_STAT *st,
 	      int report)
 {
 	int updated = 0;
-#ifndef NOSHELLORSERVER
 	STRUCT_STAT st2;
 	int change_uid, change_gid;
 
@@ -178,6 +177,7 @@ int set_perms(char *fname,struct file_struct *file,STRUCT_STAT *st,
 		}
 	}
 
+#ifndef NOSHELLORSERVER
 	change_uid = am_root && preserve_uid && st->st_uid != file->uid;
 	change_gid = preserve_gid && file->gid != (gid_t) -1 && \
 				st->st_gid != file->gid;
@@ -203,6 +203,7 @@ int set_perms(char *fname,struct file_struct *file,STRUCT_STAT *st,
 		}
 		updated = 1;
 	}
+#endif
 
 #ifdef HAVE_CHMOD
 	if (!S_ISLNK(st->st_mode)) {
@@ -223,7 +224,6 @@ int set_perms(char *fname,struct file_struct *file,STRUCT_STAT *st,
 		else
 			rprintf(FINFO,"%s is uptodate\n",fname);
 	}
-#endif
 	return updated;
 }
 
