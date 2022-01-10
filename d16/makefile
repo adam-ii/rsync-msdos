@@ -53,7 +53,7 @@ WLIB		= $(RT)\wattcp\lib\wattcpbl.lib
 # -O Optimise jumps, -X remove autodependency information in objects and libs
 # -Z suppress register reloads, compile only, -3 386 processor
 # -v include debugging information
-CC_FLGS 	= -3 -w -d -f- -O -X -Z -c -m$(MODEL) -I$(CINCLUDE)
+CC_FLGS 	= -1- -w -d -f- -O -X -Z -c -m$(MODEL) -I$(CINCLUDE)
 # allow 32bit, map file with segments, align segments on paragraph
 LNK_FLGS	= /3 /m /s /A=16 /L$(BCC31)\lib
 
