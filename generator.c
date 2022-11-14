@@ -217,7 +217,6 @@ static struct sum_struct *generate_sums(struct map_struct *buf,OFF_T len,int n)
 #else
 			rprintf(FINFO,"chunk[%d] offset=%.0f len=%d sum1=%08x\n",
 				i,(double)s->sums[i].offset,s->sums[i].len,s->sums[i].sum1);
-
 #endif
 		len -= n1;
 		offset += n1;

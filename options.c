@@ -218,7 +218,9 @@ void usage(enum logcode F)
   rprintf(F," -u, --update                update only (don't overwrite newer files)\n");
 #ifndef NOSHELLORSERVER
   rprintf(F," -l, --links                 copy symlinks as symlinks\n");
+#endif
   rprintf(F," -L, --copy-links            copy the referent of symlinks\n");
+#ifndef NOSHELLORSERVER
   rprintf(F,"     --copy-unsafe-links     copy links outside the source tree\n");
   rprintf(F,"     --safe-links            ignore links outside the destination tree\n");
   rprintf(F," -H, --hard-links            preserve hard links\n");
@@ -266,11 +268,11 @@ void usage(enum logcode F)
   rprintf(F," -P                          equivalent to --partial --progress\n");
 #ifndef NOSHELLORSERVER
   rprintf(F," -z, --compress              compress file data\n");
+#endif
   rprintf(F,"     --exclude=PATTERN       exclude files matching PATTERN\n");
   rprintf(F,"     --exclude-from=FILE     exclude patterns listed in FILE\n");
   rprintf(F,"     --include=PATTERN       don't exclude files matching PATTERN\n");
   rprintf(F,"     --include-from=FILE     don't exclude patterns listed in FILE\n");
-#endif
   rprintf(F,"     --version               print version number\n");  
 #ifndef NOSHELLORSERVER
   rprintf(F,"     --daemon                run as a rsync daemon\n");  
@@ -335,10 +337,12 @@ static struct poptOption long_options[] = {
   {"force",            0,  POPT_ARG_NONE,   &force_delete , 0, 0, 0 },
 #ifndef NOSHELLORSERVER
   {"numeric-ids",      0,  POPT_ARG_NONE,   &numeric_ids , 0, 0, 0 },
+#endif
   {"exclude",          0,  POPT_ARG_STRING, 0,              OPT_EXCLUDE, 0, 0 },
   {"include",          0,  POPT_ARG_STRING, 0,              OPT_INCLUDE, 0, 0 },
   {"exclude-from",     0,  POPT_ARG_STRING, 0,              OPT_EXCLUDE_FROM, 0, 0 },
   {"include-from",     0,  POPT_ARG_STRING, 0,              OPT_INCLUDE_FROM, 0, 0 },
+#ifndef NOSHELLORSERVER
   {"safe-links",       0,  POPT_ARG_NONE,   &safe_symlinks , 0, 0, 0 },
 #endif
   {"help",            'h', POPT_ARG_NONE,   0,              'h', 0, 0 },
@@ -353,7 +357,9 @@ static struct poptOption long_options[] = {
   {"update",          'u', POPT_ARG_NONE,   &update_only , 0, 0, 0 },
 #ifndef NOSHELLORSERVER
   {"links",           'l', POPT_ARG_NONE,   &preserve_links , 0, 0, 0 },
+#endif
   {"copy-links",      'L', POPT_ARG_NONE,   &copy_links , 0, 0, 0 },
+#ifndef NOSHELLORSERVER
   {"whole-file",      'W', POPT_ARG_NONE,   0,              OPT_WHOLE_FILE, 0, 0 },
   {"no-whole-file",    0,  POPT_ARG_NONE,   0,              OPT_NO_WHOLE_FILE, 0, 0 },
   {"copy-unsafe-links", 0, POPT_ARG_NONE,   &copy_unsafe_links , 0, 0, 0 },
