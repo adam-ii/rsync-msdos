@@ -18,11 +18,11 @@
 
 /////////////// various emulated unix declares for DOS/WINDOWS /////////////////////
 
-#ifdef __BORLANDC__
-#include	<sys\wtime.h>
-#include	<sys\wtypes.h>
-#include	<sys\socket.h>
-#include	<sys\so_ioctl.h>
+#if defined(__BORLANDC__) || defined(__WATCOMC__)
+#include	<sys/wtime.h>
+#include	<sys/wtypes.h>
+#include	<sys/socket.h>
+#include	<sys/so_ioctl.h>
 #include	<process.h>
 // syslog.h ////////////////////////////////////////////////////////////////
 #define syslog(p1, p2, p3)
@@ -30,6 +30,7 @@
 #define LOG_PID 0
 #define LOG_WARNING 0
 #define LOG_INFO 0
+#if defined(__BORLANDC__)
 // unistd.h ////////////////////////////////////////////////////////////////
 #define R_OK	0x02
 // sys/stat.h ////////////////////////////////////////////////////////////////
@@ -58,6 +59,7 @@
 #define _S_IEXEC	0000100
 
 #define _S_IFBLK		0x1000
+#endif
 // grp.h ////////////////////////////////////////////////////////////////
 struct group {
   gid_t		gr_gid;

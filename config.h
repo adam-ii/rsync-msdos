@@ -1,15 +1,6 @@
 /* config.h Generated manually for Borland C/C++ 3.1 16bit.  */
 #include "confdefs.h"
 
-// used to identify changes made for the limited functionality
-// version of rsync that only works using the socket interface
-#define NOSHELLORSERVER
-// used to identify code changes for the 16bit version using borlandc
-// these changes are only appropriate to the limited version above
-#ifdef __BORLANDC__
-#define MSDOS
-#endif
-
 #undef ino_t
 #undef HAVE_CONNECT
 #undef HAVE_SHORT_INO_T
@@ -88,7 +79,10 @@
 #define HAVE_GETCWD 1
 
 /* Define if you have the `getnameinfo' function. */
-#undef c
+#undef HAVE_GETNAMEINFO
+#ifndef __BORLANDC__
+#define HAVE_GETNAMEINFO 1
+#endif
 
 /* some systems need a version with 2 parameters */
 #undef HAVE_GETTIMEOFDAY_TZ
@@ -195,6 +189,9 @@
 
 /* Define if you have strct sockaddr_storage. */
 #undef HAVE_SOCKADDR_STORAGE
+#ifndef __BORLANDC__
+#define HAVE_SOCKADDR_STORAGE 1
+#endif
 
 /* */
 #undef HAVE_SOCKETPAIR
@@ -219,6 +216,9 @@
 
 /* Define if you have the `strerror' function. */
 #undef HAVE_STRERROR
+#ifdef __WATCOMC__
+#define HAVE_STRERROR 1
+#endif
 
 /* Define if you have the `strftime' function. */
 #undef HAVE_STRFTIME
@@ -308,9 +308,7 @@
 
 /* Define if you have the <utime.h> header file. */
 #undef HAVE_UTIME_H
-#ifdef __BORLANDC__
 #define HAVE_UTIME_H 1
-#endif
 
 /* Define if `utime(file, NULL)' sets file's timestamp to the present. */
 #undef HAVE_UTIME_NULL
@@ -350,7 +348,7 @@
 
 /* The size of a `int', as computed by sizeof. */
 #undef SIZEOF_INT
-#ifdef __BORLANDC__
+#ifdef _M_IX86
 #define SIZEOF_INT 2
 #else
 #define SIZEOF_INT 4
@@ -385,8 +383,10 @@
 #undef _LARGE_FILES
 
 /* Define to `int' if <sys/types.h> doesn't define. */
+#ifdef __BORLANDC__
 #undef gid_t
 #define gid_t int
+#endif
 
 /* Define as `__inline' if that's what the C compiler calls it, or to nothing
    if it is not supported. */
@@ -397,8 +397,10 @@
 #undef ino_t
 
 /* Define to `int' if <sys/types.h> does not define. */
+#ifdef __BORLANDC__
 #undef mode_t
 #define mode_t int
+#endif
 
 #ifdef __BORLANDC__
 #undef dev_t
@@ -412,8 +414,10 @@
 #endif
 
 /* Define to `int' if <sys/types.h> does not define. */
+#ifdef __BORLANDC__
 #undef pid_t
 #define pid_t int
+#endif
 
 /* Define to `unsigned' if <sys/types.h> does not define. */
 #undef size_t
@@ -423,5 +427,7 @@
 #define socklen_t int
 
 /* Define to `int' if <sys/types.h> doesn't define. */
+#ifdef __BORLANDC__
 #undef uid_t
 #define uid_t int
+#endif

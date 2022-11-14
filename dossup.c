@@ -21,7 +21,7 @@
 
 #include "rsync.h"
 
-#ifdef __BORLANDC__
+#if defined(__BORLANDC__) || defined(__WATCOMC__)
 /* we need this function because of the silly way in which duplicate
    entries are handled in the file lists - we can't change this
    without breaking existing versions */
@@ -165,13 +165,16 @@ int	strcasecmp(const char *_s1, const char *_s2)
 }
 //////////////////////////////////////////////////////////////////////////
 // rather than including permstring.c in the lib (needs defines)
+#if defined(__BORLANDC__)
 void permstring(char *perms, int mode)
 {
 	static const char *perm_map = "rwxrwxrwx";
 
 	strcpy(perms, "----------");
 }
+#endif
 pid_t	waitpid(pid_t pid, int *statptr, int options)
 {
 	return(0);
 }
+

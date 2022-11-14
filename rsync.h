@@ -18,7 +18,6 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 */
 
-#include "config.h"
 
 #define False 0
 #define True 1
@@ -68,7 +67,7 @@
 #define RSYNC_PORT 873
 
 #define SPARSE_WRITE_SIZE (1024)
-#ifdef NOSHELLORSERVER
+#ifdef MSDOS
 // much of the code works with int, largest power of 2 is 16k
 // 4 chunks are held in a map so chunk size limited to 4k
 #define WRITE_SIZE (4*1024)
@@ -92,6 +91,7 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 
 #include "errcode.h"
 
+#include "config.h"
 
 /* The default RSYNC_RSH is always set in config.h, either to "remsh",
  * "rsh", or otherwise something specified by the user.  HAVE_REMSH
@@ -117,7 +117,7 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 #include <sys/socket.h>
 #endif
 
-#ifdef NOSHELLORSERVER
+#ifdef MSDOS
 #include <dossup.h>
 #endif
 
@@ -158,9 +158,8 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 #include <sys/filio.h>
 #endif
 
-#include	<io.h>
-
-#ifdef NOSHELLORSERVER
+#ifdef MSDOS
+#include <io.h>
 #define getuid() 0
 #endif
 
@@ -211,15 +210,21 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 
 #include <stdarg.h>
 
-#ifdef __BORLANDC__
+#if defined(MSDOS)
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
+#include <arpa/nameser.h>
+#include <resolv.h>
 #endif
 
 #if HAVE_DIRENT_H
+#ifdef __WATCOMC__
+#include <direct.h>
+#else
+#include <dirent.h>
+#endif
 #ifdef __BORLANDC__
-# include <dirent.h>
 #include <dir.h>
 #endif
 #else
@@ -439,7 +444,7 @@ struct stats {
 
 
 #ifdef NOSHELLORSERVER
-#ifdef __BORLANDC__
+#if defined(__BORLANDC__) || defined(__WATCOMC__)
 int flist_up(struct file_list *flist, int i);
 #else
 /* we need this function because of the silly way in which duplicate
@@ -453,7 +458,7 @@ static inline int flist_up(struct file_list *flist, int i)
 #endif
 #endif
 
-#ifdef NOSHELLORSERVER
+#ifdef __BORLANDC__
 #include "byteord.h"
 #else
 #include "byteorder.h"
@@ -659,7 +664,7 @@ int inet_pton(int af, const char *src, void *dst);
 
 #define UNUSED(x) x __attribute__((__unused__))
 
-#if __BORLANDC__
+#ifdef MSDOS
 extern int select_s (int n, fd_set *r, fd_set *w, fd_set *x, struct timeval *t);
 #define select select_s
 #endif

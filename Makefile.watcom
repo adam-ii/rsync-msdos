@@ -1,0 +1,92 @@
+MODEL = l
+
+CC = wcc
+LD = wlink
+# LD = wcl
+
+ifeq ($(WATT32_DIR),)
+$(error WATT32_DIR not defined)
+endif
+
+# When enabled, links against empty watt32 functions instead of the full library
+WATTCP_STUBS = 0
+
+CC_FLAGS = -q -bt=dos -0 -wx -fpc -m$(MODEL) -I. -Ipopt -I$(WATT32_DIR)/inc -I$(WATCOM)/h -DNOSHELLORSERVER -DHAVE_CONFIG_H
+CC_FLAGS += -zu 			# SS != DGROUP
+CC_FLAGS += -zm				# place functions in separate segments
+
+CC_FLAGS_RELEASE += -d0		# no debugging information
+CC_FLAGS_RELEASE += -os 	# optimize for space
+CC_FLAGS_RELEASE += -s		# remove stack overflow checks
+CC_FLAGS_RELEASE += -zc		# place strings in CODE segment
+CC_FLAGS_RELEASE += -zl		# remove default library information
+CC_FLAGS_RELEASE += -zld	# remove file dependency information
+
+CC_FLAGS_DEBUG += -od		# disable optimizations
+CC_FLAGS_DEBUG += -d2		# full symbolic debugging info.
+
+STACK_SIZE = 12k
+
+WLINK_DIRECTIVES = OPT dosseg OPT eliminate
+
+ifeq ($(RELEASE),1)
+TARGET = rsync.exe
+else
+TARGET = rsync_d.exe
+WLINK_DIRECTIVES += DEB dwarf
+endif
+
+RSYNC_SRCS = authenticate.c batch.c checksum.c cleanup.c clientserver.c compat.c dossup.c \
+	exclude.c fileio.c flist.c io.c loadparm.c log.c main.c match.c \
+	options.c rsync.c sender.c socket.c syscall.c token.c uidlist.c util.c \
+	generator.c receiver.c backup.c hlink.c clientname.c params.c \
+
+POPT_SRCS += $(addprefix popt/, findme.c popt.c poptconfig.c popthelp.c poptparse.c)
+
+LIB_SRCS += $(addprefix lib/, compat.c fnmatch.c inet_ntop.c inet_pton.c mdfour.c permstring.c snprintf.c)
+
+ALL_SRCS = $(RSYNC_SRCS) $(POPT_SRCS) $(LIB_SRCS)
+
+ifeq ($(LD),wlink)
+LIBS = clib$(MODEL)
+else
+LIBS =
+endif
+
+ifeq ($(WATTCP_STUBS),1)
+RSYNC_SRCS += d16/wattcp_stubs.c
+else
+LIBS := $(WATT32_DIR)/lib/wattcpw$(MODEL).lib $(LIBS)
+endif
+
+ALL_OBJS_DEBUG = $(patsubst %.c, %_d.o, $(ALL_SRCS))
+ALL_OBJS_RELEASE = $(patsubst %.c, %.o, $(ALL_SRCS))
+
+ifeq ($(RELEASE),1)
+ALL_OBJS = $(ALL_OBJS_RELEASE)
+else
+ALL_OBJS = $(ALL_OBJS_DEBUG)
+endif
+
+all: $(TARGET)
+
+$(TARGET): $(ALL_OBJS)
+ifeq ($(LD),wlink)
+	$(LD) NAME $@ SYS dos OPT map OPT stack=$(STACK_SIZE) $(WLINK_DIRECTIVES) LIB { $(LIBS) } FILE { $(ALL_OBJS) }
+endif
+ifeq ($(LD),wcl)
+	$(eval LNK_FILE := $(shell mktemp))
+	echo $(WLINK_DIRECTIVES) > $(LNK_FILE)
+	${LD} -fe=$@ -fd=$@.lnk -fm -l=dos -m$(MODEL) -k$(STACK_SIZE) @$(LNK_FILE) $(LIBS) $(ALL_OBJS)
+	rm $(LNK_FILE)
+endif
+
+.PHONY: clean
+clean:
+	rm -f $(ALL_OBJS) rsync.exe
+
+%.o: %.c
+	$(CC) $(CC_FLAGS) $(CC_FLAGS_RELEASE) -Fo=$@ $<
+
+%_d.o: %.c
+	$(CC) $(CC_FLAGS) $(CC_FLAGS_DEBUG) -Fo=$@ $<
