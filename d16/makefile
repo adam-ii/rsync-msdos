@@ -72,7 +72,7 @@ $(CC_FLGS) -I$(RT) -I$(ZL) -I$(RL) -I$(WS) -I$(PL) $*.c
 
 LIB_INCLUDES	= $(RL)\addrinfo.h  $(RT)\confdefs.h $(RT)\config.h $(RT)\errcode.h $(RT)\dossup.h \
 		$(RL)\fnmatch.h $(WS)\netinet\in.h $(WS)\arpa\inet.h $(RL)\mdfour.h \
-		 $(RT)\proto.h $(RT)\rsync.h $(RT)\byteord.h $(RL)\permstr.h
+		 $(RT)\proto.h $(RT)\rsync.h $(RT)\byteord.h $(RL)\permstr_.h
 
 PLIB_INCLUDES	= $(PL)\findme.h $(PL)\popt.h $(PL)\poptint.h $(PL)\system.h $(RT)\confdefs.h $(RT)\config.h
 

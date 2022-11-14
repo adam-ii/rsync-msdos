@@ -459,8 +459,8 @@ static inline int flist_up(struct file_list *flist, int i)
 #include "byteorder.h"
 #endif
 #include "lib/mdfour.h"
-#ifdef NOSHELLORSERVER
-#include "lib/permstr.h"
+#ifdef __BORLANDC__
+#include "lib/permstr_.h"
 #else
 #include "lib/permstring.h"
 #endif
