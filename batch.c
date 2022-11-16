@@ -396,7 +396,7 @@ void close_batch_csums_file(void)
 	close(fdb);
 }
 
-void write_batch_csum_info(int *flist_entry, int flist_count,
+void write_batch_csum_info(int32 *flist_entry, int flist_count,
 			   struct sum_struct *s)
 {
 	size_t i;

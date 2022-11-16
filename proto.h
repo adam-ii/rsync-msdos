@@ -14,7 +14,7 @@ unsigned char read_batch_flags();
 void read_batch_flist_info(struct file_struct **fptr);
 void write_batch_csums_file(void *buff, int bytes_to_write);
 void close_batch_csums_file(void);
-void write_batch_csum_info(int *flist_entry, int flist_count,
+void write_batch_csum_info(int32 *flist_entry, int flist_count,
 			   struct sum_struct *s);
 int read_batch_csums_file(char *buff, int len);
 void read_batch_csum_info(int flist_entry, struct sum_struct *s,

@@ -93,7 +93,7 @@ void send_files(struct file_list *flist,int f_out,int f_in)
 	struct map_struct *buf = NULL;
 	STRUCT_STAT st;
 	char fname[MAXPATHLEN];  
-	int i;
+	int32 i;
 	struct file_struct *file;
 	int phase = 0;
 	extern struct stats stats;		
