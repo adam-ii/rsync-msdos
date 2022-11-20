@@ -36,7 +36,7 @@ TARGET = rsync_d.exe
 WLINK_DIRECTIVES += DEB dwarf
 endif
 
-RSYNC_SRCS = authenticate.c batch.c checksum.c cleanup.c clientserver.c compat.c dossup.c \
+RSYNC_SRCS = authenticate.c batch.c checksum.c cleanup.c clientserver.c compat.c \
 	exclude.c fileio.c flist.c io.c loadparm.c log.c main.c match.c \
 	options.c rsync.c sender.c socket.c syscall.c token.c uidlist.c util.c \
 	generator.c receiver.c backup.c hlink.c clientname.c params.c \

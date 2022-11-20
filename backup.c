@@ -111,9 +111,11 @@ static int make_bak_dir(char *fname,char *bak_path)
                                 } else {
                                         st2=&st;
                                         set_modtime(fullpath,st2->st_mtime);
+#ifndef MSDOS
                                         if(do_lchown(fullpath,st2->st_uid,st2->st_gid)!=0) {
                                                 rprintf(FERROR,"make_bak_dir chown %s : %s\n",fullpath,strerror(errno));
                                         };
+#endif
                                         if(do_chmod(fullpath,st2->st_mode)!=0) {
                                                 rprintf(FERROR,"make_bak_dir failed to set permissions on %s : %s\n",fullpath,strerror(errno));
                                         };

@@ -151,7 +151,9 @@ int set_perms(char *fname,struct file_struct *file,STRUCT_STAT *st,
 {
 	int updated = 0;
 	STRUCT_STAT st2;
+#ifndef NOSHELLORSERVER
 	int change_uid, change_gid;
+#endif
 
 	if (dry_run) return 0;
 

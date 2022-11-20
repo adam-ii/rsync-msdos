@@ -55,16 +55,20 @@ static struct idlist *add_list(int id, char *name)
 /* turn a uid into a user name */
 static char *uid_to_name(uid_t uid)
 {
+#ifndef MSDOS
 	struct passwd *pass = getpwuid(uid);
 	if (pass) return(pass->pw_name);
+#endif
 	return NULL;
 }
 
 /* turn a gid into a group name */
 static char *gid_to_name(gid_t gid)
 {
+#ifndef MSDOS
 	struct group *grp = getgrgid(gid);
 	if (grp) return(grp->gr_name);
+#endif
 	return NULL;
 }
 

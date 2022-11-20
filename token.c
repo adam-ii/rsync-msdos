@@ -195,13 +195,13 @@ send_deflated_token(int f, int token,
 		r = run_start - last_run_end;
 		n = last_token - run_start;
 		if (r >= 0 && r <= 63) {
-			write_byte(f, (unsigned char)((n==0? TOKEN_REL: TOKENRUN_REL) + r));
+			write_byte(f, (n==0? TOKEN_REL: TOKENRUN_REL) + r);
 			if (write_batch) { /* dw */
 			    temp_byte = (char)( (n==0? TOKEN_REL: TOKENRUN_REL) + r);
 			    write_batch_delta_file(&temp_byte,sizeof(char));
 			}
 		} else {
-			write_byte(f, (unsigned char)(n==0? TOKEN_LONG: TOKENRUN_LONG));
+			write_byte(f, (n==0? TOKEN_LONG: TOKENRUN_LONG));
 			write_int(f, run_start);
 			if (write_batch) { /* dw */
 			    temp_byte = (char)(n==0? TOKEN_LONG: TOKENRUN_LONG);
@@ -210,8 +210,8 @@ send_deflated_token(int f, int token,
 			}
 		}
 		if (n != 0) {
-			write_byte(f, (unsigned char)n);
-			write_byte(f, (unsigned char)(n >> 8));
+			write_byte(f, n);
+			write_byte(f, n >> 8);
 			if (write_batch) { /* dw */
 			    write_batch_delta_file((char *)&n,sizeof(char));
 			    temp_byte = (char) n >> 8;

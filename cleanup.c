@@ -100,13 +100,7 @@ void _exit_cleanup(int code, const char *file, int line)
 			ocode, file, line, code);
 
 #ifdef NOSHELLORSERVER
-	chdir((char *)&init_dir[0]);
-#ifdef _MSC_VER
-	WSACleanup();
-#endif
-#endif
-#ifdef _WINDOWS
-	exitToCaller(code);
+	chdir(init_dir);
 #endif
 	exit(code);
 }

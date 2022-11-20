@@ -87,7 +87,7 @@ static void build_hash_table(struct sum_struct *s)
     targets[i].t = gettag(s->sums[i].sum1);
   }
 
-  qsort(targets,s->count,sizeof(targets[0]),(int (*)(const void *, const void *))compare_targets);
+  qsort(targets,s->count,sizeof(targets[0]),(int (*)())compare_targets);
 
   for (i=0;i<TABLESIZE;i++)
     tag_table[i] = NULL_TAG;
@@ -178,11 +178,7 @@ static void hash_search(int f,struct sum_struct *s,
 			
 		j = tag_table[t];
 		if (verbose > 4)
-#ifdef NOSHELLORSERVER
-			rprintf(FINFO,"offset=%lu sum=%08lx\n",(uint32)offset,sum);
-#else
 			rprintf(FINFO,"offset=%.0f sum=%08x\n",(double)offset,sum);
-#endif		
 		
 		if (j == NULL_TAG) {
 			goto null_tag;
@@ -200,14 +196,9 @@ static void hash_search(int f,struct sum_struct *s,
 			if (l != s->sums[i].len) continue;			
 
 			if (verbose > 3)
-#ifdef NOSHELLORSERVER
-				rprintf(FINFO,"potential match at %lu target=%d %d sum=%08lx\n",
-					(uint32)offset,j,i,sum);
-#else
 				rprintf(FINFO,"potential match at %.0f target=%d %d sum=%08x\n",
 					(double)offset,j,i,sum);
 			
-#endif			
 			if (!done_csum2) {
 				map = (schar *)map_ptr(buf,offset,l);
 				get_checksum2((char *)map,l,sum2);

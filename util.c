@@ -29,12 +29,15 @@
 extern int verbose;
 
 
-#ifndef NOSHELLORSERVER
 /****************************************************************************
 Set a fd into nonblocking mode
 ****************************************************************************/
 void set_nonblocking(int fd)
 {
+#ifdef MSDOS
+	char cmd = 1;
+	ioctlsocket(fd, FIONBIO, &cmd);
+#else
 	int val;
 
 	if((val = fcntl(fd, F_GETFL, 0)) == -1)
@@ -43,6 +46,7 @@ void set_nonblocking(int fd)
 		val |= NONBLOCK_FLAG;
 		fcntl(fd, F_SETFL, val);
 	}
+#endif
 }
 
 /****************************************************************************
@@ -50,6 +54,10 @@ Set a fd into blocking mode
 ****************************************************************************/
 void set_blocking(int fd)
 {
+#ifdef MSDOS
+	char cmd = 0;
+	ioctlsocket(fd, FIONBIO, &cmd);
+#else
 	int val;
 
 	if((val = fcntl(fd, F_GETFL, 0)) == -1)
@@ -58,9 +66,11 @@ void set_blocking(int fd)
 		val &= ~NONBLOCK_FLAG;
 		fcntl(fd, F_SETFL, val);
 	}
+#endif
 }
 
 
+#ifndef NOSHELLORSERVER
 /* create a file descriptor pair - like pipe() but use socketpair if
    possible (because of blocking issues on pipes)
 
@@ -534,6 +544,7 @@ void kill_all(int sig)
 /* turn a user name into a uid */
 int name_to_uid(char *name, uid_t *uid)
 {
+#ifndef MSDOS
 	struct passwd *pass;
 	if (!name || !*name) return 0;
 	pass = getpwnam(name);
@@ -541,12 +552,14 @@ int name_to_uid(char *name, uid_t *uid)
 		*uid = pass->pw_uid;
 		return 1;
 	}
+#endif
 	return 0;
 }
 
 /* turn a group name into a gid */
 int name_to_gid(char *name, gid_t *gid)
 {
+#ifndef MSDOS
 	struct group *grp;
 	if (!name || !*name) return 0;
 	grp = getgrnam(name);
@@ -554,6 +567,7 @@ int name_to_gid(char *name, gid_t *gid)
 		*gid = grp->gr_gid;
 		return 1;
 	}
+#endif
 	return 0;
 }
 
@@ -656,7 +670,7 @@ void strlower(char *s)
 }
 #endif
 
-#ifdef NOSHELLORSERVER
+#ifdef __BORLANDC__
 // cannot have this function as it gets called from clib because
 // the dos linker cannot decide between realloc and Realloc
 void *do_realloc(void *p, int size)

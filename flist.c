@@ -178,19 +178,6 @@ static void list_file_entry(struct file_struct *f)
 
 	permstring(perms, f->mode);
 
-#ifdef NOOSHELLORSERVER
-	if (preserve_links && S_ISLNK(f->mode)) {
-		rprintf(FINFO, "%s %lu %s %s -> %s\n",
-			perms,
-			(uint32) f->length, timestring(f->modtime),
-			f_name(f), f->link);
-	} else {
-		rprintf(FINFO, "%s %lu %s %s\n",
-			perms,
-			(uint32) f->length, timestring(f->modtime),
-			f_name(f));
-	}
-#else
 	if (preserve_links && S_ISLNK(f->mode)) {
 		rprintf(FINFO, "%s %11.0f %s %s -> %s\n",
 			perms,
@@ -202,7 +189,6 @@ static void list_file_entry(struct file_struct *f)
 			(double) f->length, timestring(f->modtime),
 			f_name(f));
 	}
-#endif
 }
 
 
@@ -321,19 +307,11 @@ static void flist_expand(struct file_list *flist)
 		else
 			new_ptr = malloc(new_bytes);
 
-#ifdef NOSHELLORSERVER
-		if (verbose >= 2) {
-			rprintf(FINFO, "expand file_list to %lu bytes, did %s move\n",
-				(uint32) new_bytes,
-				(new_ptr == flist->files) ? " not" : "");
-		}
-#else
 		if (verbose >= 2) {
 			rprintf(FINFO, "expand file_list to %.0f bytes, did%s move\n",
 				(double) new_bytes,
 				(new_ptr == flist->files) ? " not" : "");
 		}
-#endif
 		
 		flist->files = (struct file_struct **) new_ptr;
 
@@ -1256,7 +1234,7 @@ static void clean_flist(struct file_list *flist, int strip_root)
 		return;
 
 	qsort(flist->files, flist->count,
-	      sizeof(flist->files[0]), (int (*)(const void *, const void *)) file_compare);
+	      sizeof(flist->files[0]), (int (*)()) file_compare);
 
 	for (i = 1; i < flist->count; i++) {
 		if (flist->files[i]->basename &&
@@ -1306,21 +1284,12 @@ static void clean_flist(struct file_list *flist, int strip_root)
 		return;
 
 	for (i = 0; i < flist->count; i++) {
-#ifdef NOSHELLORSERVER
-		rprintf(FINFO, "[%d] i=%d %s %s mode=0%o len=%lu\n",
-			(int)getpid(), i,
-			NS(flist->files[i]->dirname),
-			NS(flist->files[i]->basename),
-			(int)flist->files[i]->mode,
-			(uint32) flist->files[i]->length);
-#else
 		rprintf(FINFO, "[%d] i=%d %s %s mode=0%o len=%.0f\n",
 			(int) getpid(), i,
 			NS(flist->files[i]->dirname),
 			NS(flist->files[i]->basename),
 			(int) flist->files[i]->mode,
 			(double) flist->files[i]->length);
-#endif
 	}
 }
 

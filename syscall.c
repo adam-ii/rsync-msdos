@@ -39,7 +39,7 @@ int do_unlink(char *fname)
 	return unlink(fname);
 }
 
-#ifndef NOSHELLORSERVER
+#ifndef MSDOS
 int do_symlink(char *fname1, char *fname2)
 {
 	if (dry_run) return 0;
@@ -57,7 +57,7 @@ int do_link(char *fname1, char *fname2)
 }
 #endif
 
-#ifndef NOSHELLORSERVER
+#ifndef MSDOS
 int do_lchown(const char *path, uid_t owner, gid_t group)
 {
 	if (dry_run) return 0;
@@ -201,7 +201,7 @@ int do_stat(const char *fname, STRUCT_STAT *st)
 #endif
 }
 
-#if SUPPORT_LINKS
+#if SUPPORT_LINKS || defined(MSDOS)
 int do_lstat(const char *fname, STRUCT_STAT *st)
 {
 #if HAVE_OFF64_T

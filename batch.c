@@ -580,13 +580,8 @@ void show_flist(int index, struct file_struct **fptr)
 		rprintf(FINFO, "flist->flags=%#x\n", fptr[i]->flags);
 		rprintf(FINFO, "flist->modtime=%#lx\n",
 			(long unsigned) fptr[i]->modtime);
-#ifndef NOSHELLORSERVER
-		rprintf(FINFO, "flist->length=%lu\n",
-			(uint32) fptr[i]->length);
-#else
 		rprintf(FINFO, "flist->length=%.0f\n",
 			(double) fptr[i]->length);
-#endif
 		rprintf(FINFO, "flist->mode=%#o\n", (int) fptr[i]->mode);
 		rprintf(FINFO, "flist->basename=%s\n", fptr[i]->basename);
 		if (fptr[i]->dirname)

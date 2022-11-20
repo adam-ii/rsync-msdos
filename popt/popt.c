@@ -6,6 +6,10 @@
 #include "findme.h"
 #include "poptint.h"
 
+#ifdef MSDOS
+#include <process.h>
+#endif
+
 #ifndef HAVE_STRERROR
 static char * strerror(int errno) {
     extern int sys_nerr;

@@ -117,10 +117,6 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 #include <sys/socket.h>
 #endif
 
-#ifdef MSDOS
-#include <dossup.h>
-#endif
-
 #ifdef HAVE_STRING_H
 #include <string.h>
 #endif
@@ -160,7 +156,7 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 
 #ifdef MSDOS
 #include <io.h>
-#define getuid() 0
+#include <sys/ioctl.h>
 #endif
 
 #include <signal.h>
@@ -193,7 +189,7 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 #ifdef HAVE_FNMATCH
 #include <fnmatch.h>
 #else
-#include <lib/fnmatch.h>
+#include "lib/fnmatch.h"
 #endif
 
 #ifdef HAVE_GLOB_H
@@ -204,9 +200,11 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 #  include <malloc.h>
 #endif
 
+#ifdef __BORLANDC__
 // DOS linking is not able to distinguish between case
 // so the name is changed
 #define Realloc do_realloc
+#endif
 
 #include <stdarg.h>
 
@@ -383,7 +381,11 @@ struct file_struct {
 };
 
 
+#if SIZEOF_INT == 2
+#define ARENA_SIZE	(16 * 1024)
+#else
 #define ARENA_SIZE	(32 * 1024)
+#endif
 
 struct string_area {
 	char *base;
@@ -443,10 +445,6 @@ struct stats {
 };
 
 
-#ifdef NOSHELLORSERVER
-#if defined(__BORLANDC__) || defined(__WATCOMC__)
-int flist_up(struct file_list *flist, int i);
-#else
 /* we need this function because of the silly way in which duplicate
    entries are handled in the file lists - we can't change this
    without breaking existing versions */
@@ -455,8 +453,6 @@ static inline int flist_up(struct file_list *flist, int i)
 	while (!flist->files[i]->basename) i++;
 	return i;
 }
-#endif
-#endif
 
 #ifdef __BORLANDC__
 #include "byteord.h"
@@ -665,6 +661,13 @@ int inet_pton(int af, const char *src, void *dst);
 #define UNUSED(x) x __attribute__((__unused__))
 
 #ifdef MSDOS
+inline int getpid() { return 0; }
 extern int select_s (int n, fd_set *r, fd_set *w, fd_set *x, struct timeval *t);
 #define select select_s
+#endif
+
+#ifdef NOSHELLORSERVER
+int recv_gen_files(int f_in,int f_out,struct file_list *flist,char *local_name);
+void generate_files_phase1(int f,struct file_list *flist,char *local_name);
+void generate_files_phase2(int f,struct file_list *flist,char *local_name,int i);
 #endif

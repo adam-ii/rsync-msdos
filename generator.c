@@ -186,15 +186,9 @@ static struct sum_struct *generate_sums(struct map_struct *buf,OFF_T len,int n)
 		return s;
 	}
 
-#ifdef NOSHELLORSERVER
-	if (verbose > 3)
-		rprintf(FINFO,"count=%d rem=%d n=%d flength=%lu\n",
-			s->count,s->remainder,s->n,(uint32)s->flength);
-#else
 	if (verbose > 3)
 		rprintf(FINFO,"count=%d rem=%d n=%d flength=%.0f\n",
 			s->count,s->remainder,s->n,(double)s->flength);
-#endif
 
 	s->sums = (struct sum_buf *)malloc(sizeof(s->sums[0])*s->count);
 	if (!s->sums) out_of_memory("generate_sums");
@@ -211,13 +205,9 @@ static struct sum_struct *generate_sums(struct map_struct *buf,OFF_T len,int n)
 		s->sums[i].i = i;
 
 		if (verbose > 3)
-#ifdef NOSHELLORSERVER
-			rprintf(FINFO,"chunk[%d] offset=%ld len=%d sum1=%08lx\n",
-				i,s->sums[i].offset,s->sums[i].len,s->sums[i].sum1);
-#else
 			rprintf(FINFO,"chunk[%d] offset=%.0f len=%d sum1=%08x\n",
 				i,(double)s->sums[i].offset,s->sums[i].len,s->sums[i].sum1);
-#endif
+
 		len -= n1;
 		offset += n1;
 	}
