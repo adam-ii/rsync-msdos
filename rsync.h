@@ -200,12 +200,6 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 #  include <malloc.h>
 #endif
 
-#ifdef __BORLANDC__
-// DOS linking is not able to distinguish between case
-// so the name is changed
-#define Realloc do_realloc
-#endif
-
 #include <stdarg.h>
 
 #if defined(MSDOS)
@@ -255,10 +249,6 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 #define schar signed char
 #else
 #define schar char
-#endif
-
-#ifdef __BORLANDC__
-#define int32 long
 #endif
 
 #ifndef int32
@@ -454,17 +444,9 @@ static inline int flist_up(struct file_list *flist, int i)
 	return i;
 }
 
-#ifdef __BORLANDC__
-#include "byteord.h"
-#else
 #include "byteorder.h"
-#endif
 #include "lib/mdfour.h"
-#ifdef __BORLANDC__
-#include "lib/permstr_.h"
-#else
 #include "lib/permstring.h"
-#endif
 #include "lib/addrinfo.h"
 
 #include "proto.h"

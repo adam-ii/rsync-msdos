@@ -8,9 +8,6 @@ ifeq ($(WATT32_DIR),)
 $(error WATT32_DIR not defined)
 endif
 
-# When enabled, links against empty watt32 functions instead of the full library
-WATTCP_STUBS = 0
-
 CC_FLAGS = -q -bt=dos -0 -wx -fpc -m$(MODEL) -I. -Ipopt -I$(WATT32_DIR)/inc -I$(WATCOM)/h -DNOSHELLORSERVER -DHAVE_CONFIG_H
 CC_FLAGS += -zu 			# SS != DGROUP
 CC_FLAGS += -zm				# place functions in separate segments
@@ -47,16 +44,12 @@ LIB_SRCS += $(addprefix lib/, compat.c fnmatch.c inet_ntop.c inet_pton.c mdfour.
 
 ALL_SRCS = $(RSYNC_SRCS) $(POPT_SRCS) $(LIB_SRCS)
 
+LIBS = $(WATT32_DIR)/lib/wattcpw$(MODEL).lib
+
 ifeq ($(LD),wlink)
-LIBS = clib$(MODEL)
+LIBS += clib$(MODEL)
 else
 LIBS =
-endif
-
-ifeq ($(WATTCP_STUBS),1)
-RSYNC_SRCS += d16/wattcp_stubs.c
-else
-LIBS := $(WATT32_DIR)/lib/wattcpw$(MODEL).lib $(LIBS)
 endif
 
 ALL_OBJS_DEBUG = $(patsubst %.c, %_d.o, $(ALL_SRCS))

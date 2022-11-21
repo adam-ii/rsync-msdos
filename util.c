@@ -670,15 +670,8 @@ void strlower(char *s)
 }
 #endif
 
-#ifdef __BORLANDC__
-// cannot have this function as it gets called from clib because
-// the dos linker cannot decide between realloc and Realloc
-void *do_realloc(void *p, int size)
-{
-#else
 void *Realloc(void *p, int size)
 {
-#endif
 	if (!p) return (void *)malloc(size);
 	return (void *)realloc(p, size);
 }

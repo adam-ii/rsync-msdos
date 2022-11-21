@@ -1,1 +1,0 @@
-poptconfig.c
