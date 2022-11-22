@@ -437,6 +437,8 @@ static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
 	read_int(recv_pipe[0]);
 	close(recv_pipe[0]);
 #else
+	io_start_buffering(f_out);
+	
 	// send the checksums and ensure local permissions
 	generate_files_phase1(f_out,flist,local_name);
 	
@@ -445,8 +447,6 @@ static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
 	io_flush();
 	report(f_in);
 	io_flush();
-
-	io_start_buffering(f_out);
 #endif
 
 	if (remote_version >= 24) {
