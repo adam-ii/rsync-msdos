@@ -422,7 +422,11 @@ int recv_files(int f_in,struct file_list *flist,char *local_name,int f_gen)
 			/* if the file exists already and we aren't perserving
 			   presmissions then act as though the remote end sent
 			   us the file permissions we already have */
+#if !defined(__WATCOMC__) && !defined(MSDOS)
+			/* fstat() excludes writable permissions when the file was opened O_RDONLY,
+			   leaving the file with read only attributes. */
 			file->mode = st.st_mode;
+#endif
 		}
 
 		if (fd1 != -1 && st.st_size > 0) {

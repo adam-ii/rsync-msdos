@@ -267,7 +267,12 @@ int set_modtime(char *fname, time_t modtime)
 	{
 #ifdef HAVE_UTIMBUF
 		struct utimbuf tbuf;  
+#if defined(__WATCOMC__) && defined(MSDOS)
+		/* Passing the current time in actime causes it to be used as the file's modtime */
+		tbuf.actime = modtime;
+#else
 		tbuf.actime = time(NULL);
+#endif
 		tbuf.modtime = modtime;
 		return utime(fname,&tbuf);
 #elif defined(HAVE_UTIME)
@@ -927,7 +932,7 @@ static void rprint_progress(OFF_T ofs, OFF_T size, struct timeval *now,
                         : rate ? (double) (size-ofs) / rate / 1000.0 : 0.0;
     int32 	  remain_h, remain_m, remain_s;
 
-    if (rate > 1024*1024) {
+    if (rate > 1024L*1024L) {
 	    rate /= 1024.0 * 1024.0;
 	    units = "GB/s";
     } else if (rate > 1024) {
