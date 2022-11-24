@@ -179,7 +179,7 @@ static int get_tmpname(char *fnametmp, char *fname)
 			rprintf(FERROR,"filename too long\n");
 			return 0;
 		}
-#ifdef NOSHELLORSERVER
+#ifdef MSDOS
 		snprintf(fnametmp,MAXPATHLEN, "%s/TPXXXXXX",tmpdir);
 #else
 		snprintf(fnametmp,MAXPATHLEN, "%s/.%s.XXXXXX",tmpdir,f);
@@ -196,7 +196,7 @@ static int get_tmpname(char *fnametmp, char *fname)
 
 	if (f) {
 		*f = 0;
-#ifdef NOSHELLORSERVER
+#ifdef MSDOS
 		snprintf(fnametmp,MAXPATHLEN,"%s/TPXXXXXX", fname);
 #else
 		snprintf(fnametmp,MAXPATHLEN,"%s/.%s.XXXXXX",
@@ -204,7 +204,7 @@ static int get_tmpname(char *fnametmp, char *fname)
 #endif
 		*f = '/';
 	} else {
-#ifdef NOSHELLORSERVER
+#ifdef MSDOS
 		snprintf(fnametmp,MAXPATHLEN,"TPXXXXXX");
 #else
 		snprintf(fnametmp,MAXPATHLEN,".%s.XXXXXX",fname);
@@ -218,7 +218,7 @@ static int get_tmpname(char *fnametmp, char *fname)
 static int receive_data(int f_in,struct map_struct *buf,int fd,char *fname,
 			OFF_T total_size)
 {
-#ifdef NOSHELLORSERVER
+#if SIZEOF_INT == 2
 	int32 i;
 	uint32 n,remainder,len,count;
 #else

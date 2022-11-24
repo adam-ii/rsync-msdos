@@ -49,7 +49,9 @@ void wait_process(pid_t pid, int *status)
 }
 #endif
 
+#ifdef NOSHELLORSERVER
 char init_dir[MAXPATHLEN];
+#endif
 
 static void report(int f)
 {
@@ -173,7 +175,7 @@ static void show_malloc_stats(void)
 }
 
 
-#ifndef MSDOS
+#ifndef NOSHELLORSERVER
 /* Start the remote shell.   cmd may be NULL to use the default. */
 static pid_t do_cmd(char *cmd,char *machine,char *user,char *path,int *f_in,int *f_out)
 {
@@ -628,7 +630,7 @@ int client_run(int f_in, int f_out, pid_t pid, int argc, char *argv[])
 		exit_cleanup(0);
 	}
 	
-#ifdef NOSHELLORSERVER
+#ifdef MSDOS
 	{
 		// trim off the trailing slash unless it is root
 		int		n;
@@ -716,7 +718,7 @@ static int start_client(int argc, char *argv[])
 	extern int whole_file;
 	extern int write_batch;
 	extern int read_batch;
-#ifndef NOSHELLORSERVER
+#ifndef MSDOS
 	int rc;
 
 	/* Don't clobber argv[] so that ps(1) can still show the right

@@ -23,7 +23,7 @@ int csum_length=2; /* initial value */
 
 #define CSUM_CHUNK 64
 
-#ifdef NOSHELLORSERVER
+#if SIZEOF_INT == 2
 int32 checksum_seed = 0;
 #else
 int checksum_seed = 0;

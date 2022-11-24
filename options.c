@@ -135,7 +135,7 @@ static void print_rsync_version(enum logcode f)
         char const *hardlinks = "no ";
         char const *links = "no ";
 	char const *ipv6 = "no ";
-	STRUCT_STAT *dumstat = NULL;
+	STRUCT_STAT *dumstat;
 
 #ifdef HAVE_SOCKETPAIR
         got_socketpair = "";
@@ -745,7 +745,7 @@ void server_options(char **args,int *argc)
 	if (x != 1) args[ac++] = argstr;
 
 	if (block_size != BLOCK_SIZE) {
-#ifdef NOSHELLORSERVER
+#if SIZEOF_INT == 2
 		if (block_size > CHUNK_SIZE/2)
 			block_size = CHUNK_SIZE/2;
 #endif

@@ -110,7 +110,7 @@ int delete_file(char *fname)
 	return 0;
 }
 
-#ifndef NOSHELLORSERVER
+#ifndef MSDOS
 static int is_in_group(gid_t gid)
 {
 #ifdef GETGROUPS_T
@@ -151,7 +151,7 @@ int set_perms(char *fname,struct file_struct *file,STRUCT_STAT *st,
 {
 	int updated = 0;
 	STRUCT_STAT st2;
-#ifndef NOSHELLORSERVER
+#ifndef MSDOS
 	int change_uid, change_gid;
 #endif
 
@@ -179,7 +179,7 @@ int set_perms(char *fname,struct file_struct *file,STRUCT_STAT *st,
 		}
 	}
 
-#ifndef NOSHELLORSERVER
+#ifndef MSDOS
 	change_uid = am_root && preserve_uid && st->st_uid != file->uid;
 	change_gid = preserve_gid && file->gid != (gid_t) -1 && \
 				st->st_gid != file->gid;
@@ -235,8 +235,8 @@ void sig_int(void)
 {
 	exit_cleanup(RERR_SIGNAL);
 }
-
 #endif
+
 
 /* finish off a file transfer, renaming the file and setting the permissions
    and ownership */

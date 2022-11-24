@@ -27,7 +27,6 @@
   */
 #include "rsync.h"
 
-
 static char *logfname;
 static FILE *logfile;
 static int log_error_fd = -1;

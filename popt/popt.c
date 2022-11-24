@@ -271,7 +271,11 @@ static void execCommand(poptContext con) {
 #endif
 #endif
 
+#ifdef __WATCOMC__
+	execvp(argv[0], argv);
+#else
     execvp(argv[0], (char *const *)argv);
+#endif
 }
 
 /*@observer@*/ static const struct poptOption *

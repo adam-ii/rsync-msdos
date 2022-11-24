@@ -30,7 +30,7 @@ extern int preserve_uid;
 extern int preserve_gid;
 extern int preserve_times;
 extern int always_checksum;
-#ifdef NOSHELLORSERVER
+#if SIZEOF_INT == 2
 extern int32 checksum_seed;
 #else
 extern int checksum_seed;

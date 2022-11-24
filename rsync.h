@@ -67,9 +67,9 @@
 #define RSYNC_PORT 873
 
 #define SPARSE_WRITE_SIZE (1024)
-#if M_I86
-// much of the code works with int, largest power of 2 is 16k
-// 4 chunks are held in a map so chunk size limited to 4k
+#if M_I86 // SIZEOF_INT == 2
+/* much of the code works with int, largest power of 2 is 16k
+ * 4 chunks are held in a map so chunk size limited to 4k. */
 #define WRITE_SIZE (4*1024)
 #define CHUNK_SIZE (4*1024)
 #define MAX_MAP_SIZE (16*1024)
@@ -96,6 +96,11 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 /* The default RSYNC_RSH is always set in config.h, either to "remsh",
  * "rsh", or otherwise something specified by the user.  HAVE_REMSH
  * controls parameter munging for HP/UX, etc. */
+
+#ifdef MSDOS
+/* Provided by Watt-32, but is predicated on AC_TRY_RUN in configure.in */
+#define HAVE_GETTIMEOFDAY_TZ 1
+#endif
 
 #include <sys/types.h>
 
@@ -367,6 +372,7 @@ struct file_struct {
 
 
 #if SIZEOF_INT == 2
+/* Avoid underflow of int comparison in string_area_malloc. */
 #define ARENA_SIZE	(16 * 1024)
 #else
 #define ARENA_SIZE	(32 * 1024)
@@ -643,5 +649,4 @@ int isc_net_pton(int af, const char *src, void *dst);
 
 #ifdef MSDOS
 inline int getpid() { return 0; }
-#define select select_s
 #endif

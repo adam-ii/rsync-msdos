@@ -87,7 +87,11 @@ static int skip_file(char *fname,
 /* use a larger block size for really big files */
 static int adapt_block_size(struct file_struct *file, int bsize)
 {
+#if SIZEOF_INT == 2
 	int32 ret;
+#else
+	int ret;
+#endif
 
 	if (bsize != BLOCK_SIZE) return bsize;
 
@@ -95,7 +99,7 @@ static int adapt_block_size(struct file_struct *file, int bsize)
 	ret = ret & ~15; /* multiple of 16 */
 	if (ret < bsize) ret = bsize;
 	if (ret > CHUNK_SIZE/2) ret = CHUNK_SIZE/2;
-	return (int)ret;
+	return ret;
 }
 
 

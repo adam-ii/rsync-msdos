@@ -28,11 +28,7 @@
 
 static struct mdfour *m;
 
-#ifdef NOSHELLORSERVER
-#define MASK32 (0xffffffffL)
-#else
 #define MASK32 (0xffffffff)
-#endif
 
 #define F(X,Y,Z) ((((X)&(Y)) | ((~(X))&(Z))))
 #define G(X,Y,Z) ((((X)&(Y)) | ((X)&(Z)) | ((Y)&(Z))))
@@ -40,13 +36,8 @@ static struct mdfour *m;
 #define lshift(x,s) (((((x)<<(s))&MASK32) | (((x)>>(32-(s)))&MASK32)))
 
 #define ROUND1(a,b,c,d,k,s) a = lshift((a + F(b,c,d) + M[k])&MASK32, s)
-#ifdef NOSHELLORSERVER
-#define ROUND2(a,b,c,d,k,s) a = lshift((a + G(b,c,d) + M[k] + 0x5A827999L)&MASK32,s)
-#define ROUND3(a,b,c,d,k,s) a = lshift((a + H(b,c,d) + M[k] + 0x6ED9EBA1L)&MASK32,s)
-#else
 #define ROUND2(a,b,c,d,k,s) a = lshift((a + G(b,c,d) + M[k] + 0x5A827999)&MASK32,s)
 #define ROUND3(a,b,c,d,k,s) a = lshift((a + H(b,c,d) + M[k] + 0x6ED9EBA1)&MASK32,s)
-#endif
 
 #ifdef TEST_MDFOUR
 void	displayInts(uint32 *pI)
@@ -106,7 +97,7 @@ static void mdfour64(uint32 *M)
 
 static void copy64(uint32 *M, unsigned char *in)
 {
-#ifndef NOSHELLORSERVER
+#ifndef M_I86
 	int i;
 
 	for (i=0;i<16;i++)
@@ -129,17 +120,10 @@ static void copy4(unsigned char *out,uint32 x)
 
 void mdfour_begin(struct mdfour *md)
 {
-#ifdef NOSHELLORSERVER
-	md->A = 0x67452301L;
-	md->B = 0xefcdab89L;
-	md->C = 0x98badcfeL;
-	md->D = 0x10325476L;
-#else
 	md->A = 0x67452301;
 	md->B = 0xefcdab89;
 	md->C = 0x98badcfe;
 	md->D = 0x10325476;
-#endif
 	md->totalN = 0;
 }
 
@@ -214,8 +198,6 @@ void mdfour_result(struct mdfour *md, unsigned char *out)
 }
 
 
-#ifndef NOSHELLORSERVER
-// not used
 void mdfour(unsigned char *out, unsigned char *in, int n)
 {
 	struct mdfour md;
@@ -223,19 +205,18 @@ void mdfour(unsigned char *out, unsigned char *in, int n)
 	mdfour_update(&md, in, n);
 	mdfour_result(&md, out);
 }
-#endif
 
 #ifdef TEST_MDFOUR
 static void file_checksum1(char *fname)
 {
 	int fd, i;
 	struct mdfour md;
-#ifdef NOSHELLORSERVER
+#ifdef MSDOS
 	unsigned char buf[8*1024], sum[16];
 #else
 	unsigned char buf[64*1024], sum[16];
-	
 #endif
+	
 	fd = open(fname,O_RDONLY);
 	if (fd == -1) {
 		perror("fname");

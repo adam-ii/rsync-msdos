@@ -122,11 +122,9 @@ int poptReadDefaultConfig(poptContext con, /*@unused@*/ int useEnv) {
 #ifndef MSDOS
     char * fn, * home;
     int rc;
-#endif
 
     if (!con->appName) return 0;
 
-#ifndef MSDOS
     rc = poptReadConfigFile(con, "/etc/popt");
     if (rc) return rc;
     if (getuid() != geteuid()) return 0;

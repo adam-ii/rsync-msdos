@@ -48,7 +48,7 @@ static void base64_encode(char *buf, int len, char *out)
 	}
 }
 
-#ifndef NOSHELLORSERVER
+#ifndef MSDOS
 /* create a 16 byte challenge buffer */
 static void gen_challenge(char *addr, char *challenge)
 {
@@ -279,7 +279,7 @@ void auth_client(int fd, char *user, char *challenge)
 		/* XXX: cyeoh says that getpass is deprecated, because
 		   it may return a truncated password on some systems,
 		   and it is not in the LSB. */
-#ifndef NOSHELLORSERVER
+#ifndef MSDOS
 		pass = getpass("Password: ");
 #else
 		pass = "";

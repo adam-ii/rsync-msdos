@@ -136,20 +136,12 @@ void trim_trailing_slashes(char *name)
 
 int do_mkdir(char *fname, mode_t mode)
 {
-#ifdef NOSHELLORSERVER
-	int	status;
-#endif
-	
 	if (dry_run)
 		return 0;
 	CHECK_RO;
 	trim_trailing_slashes(fname);	
-#ifdef NOSHELLORSERVER
-	status = mkdir(fname);
-	if ((status == -1) && (errno == 0x11))
-		return(0);
-	else
-		return(status);
+#if defined(MSDOS)
+	return mkdir(fname);
 #else
 	return mkdir(fname, mode);
 #endif
@@ -159,10 +151,6 @@ int do_mkdir(char *fname, mode_t mode)
 /* like mkstemp but forces permissions */
 int do_mkstemp(char *template, mode_t perms)
 {
-#ifdef NOSHELLORSERVER
-	char	*p;
-#endif
-
 	if (dry_run) return -1;
 	if (read_only) {errno = EROFS; return -1;}
 
@@ -177,19 +165,12 @@ int do_mkstemp(char *template, mode_t perms)
 		}
 		return fd;
 	}
-#else
-#ifdef NOSHELLORSERVER
-#ifdef __BORLANDC__
-	if ((p = mktemp(template)) == NULL) return -1;
-#else
-	if ((p = _mktemp(template)) == NULL) return -1;
-#endif
-	strcpy(template, p);
+#elif defined(MSDOS)
+	if (!_mktemp(template)) return -1;
 #else
 	if (!mktemp(template)) return -1;
-#endif
+ #endif
 	return do_open(template, O_RDWR|O_EXCL|O_CREAT, perms);
-#endif
 }
 
 int do_stat(const char *fname, STRUCT_STAT *st)

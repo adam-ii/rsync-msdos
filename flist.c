@@ -376,11 +376,11 @@ static void send_file_entry(struct file_struct *file, int f,
 
 	write_byte(f, flags);
 	if (flags & SAME_NAME)
-		write_byte(f, (unsigned char)l1);
+		write_byte(f, l1);
 	if (flags & LONG_NAME)
 		write_int(f, l2);
 	else
-		write_byte(f, (unsigned char)l2);
+		write_byte(f, l2);
 	write_buf(f, fname + l1, l2);
 
 	write_longint(f, file->length);
@@ -411,8 +411,8 @@ static void send_file_entry(struct file_struct *file, int f,
 	if (preserve_hard_links && S_ISREG(file->mode)) {
 		if (remote_version < 26) {
 			/* 32-bit dev_t and ino_t */
-			write_int(f, file->dev);
-			write_int(f, file->inode);
+			write_int(f, (int) file->dev);
+			write_int(f, (int) file->inode);
 		} else {
 			/* 64-bit dev_t and ino_t */
 			write_longint(f, file->dev);

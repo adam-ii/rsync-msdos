@@ -67,8 +67,8 @@ void set_compression(char *fname)
 /* non-compressing recv token */
 static int simple_recv_token(int f,char **data)
 {
-#ifdef NOSHELLORSERVER
-// the CHUNK_SIZE at the other end (32bit) will be 32768 which is too large for a 16bit int.
+#if SIZEOF_INT == 2
+	/* the CHUNK_SIZE at the other end (32bit) will be 32768 which is too large for a 16bit int. */
 	static int32 residue;
 #else
 	static int residue;
@@ -82,8 +82,8 @@ static int simple_recv_token(int f,char **data)
 	}
 
 	if (residue == 0) {
-#ifdef NOSHELLORSERVER
-// the CHUNK_SIZE at the other end (32bit) will be 32768 which is too large for a 16bit int.
+#if SIZEOF_INT == 2
+		/* the CHUNK_SIZE at the other end (32bit) will be 32768 which is too large for a 16bit int. */
 		int32 i = read_int(f);
 #else
 		int i = read_int(f);

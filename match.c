@@ -28,21 +28,12 @@ extern int remote_version;
 
 typedef unsigned short tag;
 
-#ifdef NOSHELLORSERVER
+#if SIZEOF_INT == 2
 #define TABLESIZE (1<<12)
-#define NULL_TAG (-1)
-// NOTE: the brackets are really important in the macro to get the correct result
-// also the values of s1 and s2 may be just 16bits or more depending on who calls
-// so it is important to disregard bits above 15.
-// #define gettag2(s1,s2) (((s1) + (((s1)>>8)&0xff) + (s2) + (((s2)>>8)&0xff)) & 0xfffL)
-// The 12bit hash using 24/32 bits still gets 161/161 hits and uses less code
-#define gettag2(s1,s2) (((s1) + (s2)) & 0xFFF)
 #else
 #define TABLESIZE (1<<16)
-#define NULL_TAG (-1)
-#define gettag2(s1,s2) (((s1) + (s2)) & 0xFFFF)
 #endif
-#define gettag(sum) gettag2((sum)&0xFFFF,(sum)>>16)
+#define NULL_TAG (-1)
 
 static int false_alarms;
 static int tag_hits;
@@ -64,6 +55,17 @@ static struct target *targets;
 
 static int *tag_table;
 
+#if SIZEOF_INT == 2
+/* NOTE: the brackets are really important in the macro to get the correct result
+   also the values of s1 and s2 may be just 16bits or more depending on who calls
+   so it is important to disregard bits above 15.
+   #define gettag2(s1,s2) (((s1) + (((s1)>>8)&0xff) + (s2) + (((s2)>>8)&0xff)) & 0xfffL)
+   The 12bit hash using 24/32 bits still gets 161/161 hits and uses less code */
+#define gettag2(s1,s2) (((s1) + (s2)) & 0xFFF)
+#else
+#define gettag2(s1,s2) (((s1) + (s2)) & 0xFFFF)
+#endif
+#define gettag(sum) gettag2((sum)&0xFFFF,(sum)>>16)
 
 static int compare_targets(struct target *t1,struct target *t2)
 {

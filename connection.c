@@ -20,7 +20,7 @@
 #include "rsync.h"
 
 
-#ifndef MSDOS
+#ifndef NOSHELLORSERVER
 /****************************************************************************
 simple routine to do connection counting
 ****************************************************************************/
