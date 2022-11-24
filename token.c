@@ -18,19 +18,17 @@
 */
 
 #include "rsync.h"
-
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_ZLIB
 #include "zlib/zlib.h"
 
 extern int do_compression;
 static int compression_level = Z_DEFAULT_COMPRESSION;
-
 #endif
 
 /* determine the compression level based on a wildcard filename list */
 void set_compression(char *fname)
 {
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_ZLIB
 	extern int module_id;
 	char *dont;
 	char *tok;
@@ -133,7 +131,7 @@ static void simple_send_token(int f,int token,
 }
 
 
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_ZLIB
 /* Flag bytes in compressed stream are encoded as follows: */
 #define END_FLAG	0	/* that's all folks */
 #define TOKEN_LONG	0x20	/* followed by 32-bit token number */
@@ -490,6 +488,7 @@ static void see_deflate_token(char *buf, int len)
 		}
 	} while (len || rx_strm.avail_out == 0);
 }
+#endif
 
 /*
  * transmit a verbatim buffer of length n followed by a token 
@@ -499,11 +498,15 @@ static void see_deflate_token(char *buf, int len)
 void send_token(int f,int token,struct map_struct *buf,OFF_T offset,
 		int n,int toklen)
 {
+#ifndef DISABLE_ZLIB
 	if (!do_compression) {
 		simple_send_token(f,token,buf,offset,n);
 	} else {
 		send_deflated_token(f, token, buf, offset, n, toklen);
 	}
+#else
+	simple_send_token(f,token,buf,offset,n);
+#endif
 }
 
 
@@ -517,11 +520,15 @@ int recv_token(int f,char **data)
 {
 	int tok;
 
+#ifndef DISABLE_ZLIB
 	if (!do_compression) {
 		tok = simple_recv_token(f,data);
 	} else {
 		tok = recv_deflated_token(f, data);
 	}
+#else
+	tok = simple_recv_token(f,data);
+#endif
 	return tok;
 }
 
@@ -530,39 +537,8 @@ int recv_token(int f,char **data)
  */
 void see_token(char *data, int toklen)
 {
+#ifndef DISABLE_ZLIB
 	if (do_compression)
 		see_deflate_token(data, toklen);
-}
-
-#else
-
-/*
- * transmit a verbatim buffer of length n followed by a token 
- * If token == -1 then we have reached EOF 
- * If n == 0 then don't send a buffer
- */
-void send_token(int f,int token,struct map_struct *buf,OFF_T offset,
-		int n,int toklen)
-{
-	simple_send_token(f,token,buf,offset,n);
-}
-
-
-/*
- * receive a token or buffer from the other end. If the reurn value is >0 then
- * it is a data buffer of that length, and *data will point at the data.
- * if the return value is -i then it represents token i-1
- * if the return value is 0 then the end has been reached
- */
-int recv_token(int f,char **data)
-{
-	return(simple_recv_token(f,data));
-}
-
-/*
- * look at the data corresponding to a token, if necessary
- */
-void see_token(char *data, int toklen)
-{
-}
 #endif
+}

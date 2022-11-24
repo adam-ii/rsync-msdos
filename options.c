@@ -267,7 +267,7 @@ void usage(enum logcode F)
   rprintf(F,"     --compare-dest=DIR      also compare destination files relative to DIR\n");
 #endif
   rprintf(F," -P                          equivalent to --partial --progress\n");
-#ifndef NOSHELLORSERVER
+#ifndef DISABLE_ZLIB
   rprintf(F," -z, --compress              compress file data\n");
 #endif
   rprintf(F,"     --exclude=PATTERN       exclude files matching PATTERN\n");
@@ -387,8 +387,12 @@ static struct poptOption long_options[] = {
   {"timeout",          0,  POPT_ARG_INT,    &io_timeout , 0, 0, 0 },
   {"temp-dir",        'T', POPT_ARG_STRING, &tmpdir , 0, 0, 0 },
   {"compare-dest",     0,  POPT_ARG_STRING, &compare_dest , 0, 0, 0 },
+#endif
   /* TODO: Should this take an optional int giving the compression level? */
+#ifndef DISABLE_ZLIB
   {"compress",        'z', POPT_ARG_NONE,   &do_compression , 0, 0, 0 },
+#endif
+#ifndef NOSHELLORSERVER
   {"daemon",           0,  POPT_ARG_NONE,   &am_daemon , 0, 0, 0 },
   {"no-detach",        0,  POPT_ARG_NONE,   &no_detach , 0, 0, 0 },
 #endif

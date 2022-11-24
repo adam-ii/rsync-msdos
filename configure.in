@@ -76,6 +76,19 @@ then
 fi
 
 
+AC_ARG_ENABLE(zlib,
+	AC_HELP_STRING([--enable-zlib],	
+		[enable zlib compression],
+		[], []))
+if test x"$enable_zlib" == x"no"
+then
+	BUILD_ZLIB=
+	CFLAGS="$CFLAGS -DDISABLE_ZLIB"
+else
+	BUILD_ZLIB='$(zlib_OBJS)'
+fi
+	
+
 # This is needed for our included version of popt.  Kind of silly, but
 # I don't want our version too far out of sync.
 CFLAGS="$CFLAGS -DHAVE_CONFIG_H"
@@ -576,6 +589,7 @@ AC_SUBST(OBJ_SAVE)
 AC_SUBST(OBJ_RESTORE)
 AC_SUBST(CC_SHOBJ_FLAG)
 AC_SUBST(BUILD_POPT)
+AC_SUBST(BUILD_ZLIB)
 
 AC_CONFIG_FILES([Makefile lib/dummy zlib/dummy popt/dummy shconfig])
 AC_OUTPUT
