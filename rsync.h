@@ -67,7 +67,7 @@
 #define RSYNC_PORT 873
 
 #define SPARSE_WRITE_SIZE (1024)
-#ifdef MSDOS
+#if M_I86
 // much of the code works with int, largest power of 2 is 16k
 // 4 chunks are held in a map so chunk size limited to 4k
 #define WRITE_SIZE (4*1024)
@@ -154,11 +154,6 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 #include <sys/filio.h>
 #endif
 
-#ifdef MSDOS
-#include <io.h>
-#include <sys/ioctl.h>
-#endif
-
 #include <signal.h>
 #ifdef HAVE_SYS_WAIT_H
 #include <sys/wait.h>
@@ -200,25 +195,25 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 #  include <malloc.h>
 #endif
 
-#include <stdarg.h>
+#ifndef MSDOS
+/* these are needed for the uid/gid mapping code */
+#include <pwd.h>
+#include <grp.h>
+#endif
 
-#if defined(MSDOS)
+#include <stdarg.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-#include <arpa/nameser.h>
-#include <resolv.h>
+#include <syslog.h>
+#ifndef MSDOS
+#include <sys/file.h>
 #endif
 
 #if HAVE_DIRENT_H
-#ifdef __WATCOMC__
-#include <direct.h>
-#else
-#include <dirent.h>
-#endif
-#ifdef __BORLANDC__
-#include <dir.h>
-#endif
+# include <dirent.h>
+#elif defined(__WATCOMC__)
+# include <direct.h>
 #else
 # define dirent direct
 # if HAVE_SYS_NDIR_H
@@ -637,19 +632,16 @@ inet_ntop(int af, const void *src, char *dst, size_t size);
 #endif /* !HAVE_INET_NTOP */
 
 #ifndef HAVE_INET_PTON
+#ifdef MSDOS
 int inet_pton(int af, const char *src, void *dst);
+#else
+int isc_net_pton(int af, const char *src, void *dst);
+#endif
 #endif
 
 #define UNUSED(x) x __attribute__((__unused__))
 
 #ifdef MSDOS
 inline int getpid() { return 0; }
-extern int select_s (int n, fd_set *r, fd_set *w, fd_set *x, struct timeval *t);
 #define select select_s
-#endif
-
-#ifdef NOSHELLORSERVER
-int recv_gen_files(int f_in,int f_out,struct file_list *flist,char *local_name);
-void generate_files_phase1(int f,struct file_list *flist,char *local_name);
-void generate_files_phase2(int f,struct file_list *flist,char *local_name,int i);
 #endif

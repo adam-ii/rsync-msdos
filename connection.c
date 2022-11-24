@@ -20,6 +20,7 @@
 #include "rsync.h"
 
 
+#ifndef MSDOS
 /****************************************************************************
 simple routine to do connection counting
 ****************************************************************************/
@@ -47,3 +48,4 @@ int claim_connection(char *fname,int max_connections)
 	close(fd);
 	return 0;
 }
+#endif

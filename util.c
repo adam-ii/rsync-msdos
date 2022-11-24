@@ -661,8 +661,6 @@ void glob_expand(char *base1, char **argv, int *argc, int maxargs)
 }
 #endif
 
-#ifndef NOSHELLORSERVER
-// not used
 /*******************************************************************
   convert a string to lower case
 ********************************************************************/
@@ -673,7 +671,6 @@ void strlower(char *s)
 		s++;
 	}
 }
-#endif
 
 void *Realloc(void *p, int size)
 {
@@ -1112,7 +1109,6 @@ int cmp_modtime(time_t file1, time_t file2)
 	return 1;
 }
 
-#ifndef NOSHELLORSERVER
 
 #ifdef __INSURE__XX
 #include <dlfcn.h>
@@ -1145,5 +1141,4 @@ int _Insure_trap_error(int a1, int a2, int a3, int a4, int a5, int a6)
 
 	return ret;
 }
-#endif
 #endif

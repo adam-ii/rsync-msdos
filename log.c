@@ -28,12 +28,6 @@
 #include "rsync.h"
 
 
-#ifdef MSDOS
-#define LOG_INFO 0
-#define LOG_WARNING 0
-#endif
-
-
 static char *logfname;
 static FILE *logfile;
 static int log_error_fd = -1;
