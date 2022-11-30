@@ -32,9 +32,6 @@ static int cleanup_fd1, cleanup_fd2;
 static struct map_struct *cleanup_buf;
 static int cleanup_pid = 0;
 extern int io_error;
-#ifdef NOSHELLORSERVER
-extern char init_dir[];
-#endif
 
 pid_t cleanup_child_pid = -1;
 
@@ -99,9 +96,6 @@ void _exit_cleanup(int code, const char *file, int line)
 		rprintf(FINFO,"_exit_cleanup(code=%d, file=%s, line=%d): about to call exit(%d)\n", 
 			ocode, file, line, code);
 
-#ifdef NOSHELLORSERVER
-	chdir(init_dir);
-#endif
 	exit(code);
 }
 

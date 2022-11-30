@@ -49,9 +49,6 @@ void wait_process(pid_t pid, int *status)
 }
 #endif
 
-#ifdef NOSHELLORSERVER
-char init_dir[MAXPATHLEN];
-#endif
 
 static void report(int f)
 {
@@ -312,6 +309,7 @@ static char *get_local_name(struct file_list *flist,char *name)
 
 
 
+#ifndef NOSHELLORSERVER
 static void do_server_sender(int f_in, int f_out, int argc,char *argv[])
 {
 	int i;
@@ -360,6 +358,7 @@ static void do_server_sender(int f_in, int f_out, int argc,char *argv[])
 	io_flush();
 	exit_cleanup(0);
 }
+#endif
 
 
 static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
@@ -859,6 +858,7 @@ static RETSIGTYPE sigchld_handler(int UNUSED(val)) {
 	while (waitpid(-1, NULL, WNOHANG) > 0) ;
 #endif
 }
+#endif
 
 
 /**
@@ -892,28 +892,23 @@ static RETSIGTYPE rsync_panic_handler(int UNUSED(whatsig))
 }
 #endif
 
-#endif
 
 int main(int argc,char *argv[])
 {       
 	extern int am_root;
 	extern int orig_umask;
 	extern int dry_run;
-#ifndef NOSHELLORSERVER
 	extern int am_daemon;
 	extern int am_server;
-#endif
 	int ret;
-#ifndef NOSHELLORSERVER
 	extern int write_batch;
 	int orig_argc;
 	char **orig_argv;
-#endif
 
-#ifndef NOSHELLORSERVER
 	orig_argc = argc;
 	orig_argv = argv;
 
+#ifndef NOSHELLORSERVER
 	signal(SIGUSR1, sigusr1_handler);
 	signal(SIGUSR2, sigusr2_handler);
 	signal(SIGCHLD, sigchld_handler);
@@ -926,14 +921,7 @@ int main(int argc,char *argv[])
 #endif
 
 	starttime = time(NULL);
-#ifdef NOSHELLORSERVER
-	getcwd((char *)init_dir, MAXPATHLEN-1);
-#endif
-#ifdef MSDOS
-	am_root = 1;
-#else
 	am_root = (getuid() == 0);
-#endif
 
 	memset(&stats, 0, sizeof(stats));
 
@@ -953,7 +941,9 @@ int main(int argc,char *argv[])
 		exit_cleanup(RERR_SYNTAX);
 	}
 
-#ifndef NOSHELLORSERVER
+#ifdef MSDOS
+	/* Install signal handlers after Watt-32 has initialized. */
+#else
 	signal(SIGINT,SIGNAL_CAST sig_int);
 	signal(SIGHUP,SIGNAL_CAST sig_int);
 	signal(SIGTERM,SIGNAL_CAST sig_int);
@@ -961,6 +951,7 @@ int main(int argc,char *argv[])
 	/* Ignore SIGPIPE; we consistently check error codes and will
 	 * see the EPIPE. */
 	signal(SIGPIPE, SIG_IGN);
+#endif
 
 	/* Initialize push_dir here because on some old systems getcwd
 	   (implemented by forking "pwd" and reading its output) doesn't
@@ -972,9 +963,11 @@ int main(int argc,char *argv[])
 	    write_batch_argvs_file(orig_argc, orig_argv);
 	}
 
+#ifndef NOSHELLORSERVER
 	if (am_daemon) {
 		return daemon_main();
 	}
+#endif
 
 	if (argc < 1) {
 		usage(FERROR);
@@ -991,6 +984,7 @@ int main(int argc,char *argv[])
 	}
 #endif
 
+#ifndef NOSHELLORSERVER
 	if (am_server) {
 		set_nonblocking(STDIN_FILENO);
 		set_nonblocking(STDOUT_FILENO);

@@ -649,4 +649,5 @@ int isc_net_pton(int af, const char *src, void *dst);
 
 #ifdef MSDOS
 inline int getpid() { return 0; }
+inline int getuid() { return 0; }
 #endif

@@ -97,6 +97,11 @@ int start_socket_client(char *host, char *path, int argc, char *argv[])
 		exit_cleanup(RERR_SOCKETIO);
 	}
 	
+#ifdef MSDOS
+	/* Install signal handlers after Watt-32 has hooked SIGINT. */
+	signal_msdos();
+#endif
+
 	server_options(sargs,&sargc);
 
 	sargs[sargc++] = ".";
