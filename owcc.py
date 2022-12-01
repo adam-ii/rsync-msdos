@@ -124,6 +124,7 @@ def do_main():
         cmd = [
             'wcl',
             f'-bt={target_system}',     # compile for target OS
+            '-j',                       # change char default to signed
         ]
 
         if args.output:
@@ -141,6 +142,7 @@ def do_main():
             '-q',                   # operate quietly
             f'-bt={target_system}', # build target for operating system
             '-wx',                  # set warning level to maximum setting
+            '-j',                   # change char default from unsigned to signed
         ]
 
         if args.output:

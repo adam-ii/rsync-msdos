@@ -272,7 +272,11 @@ static int receive_data(int f_in,struct map_struct *buf,int fd,char *fname,
 		stats.matched_data += len;
 		
 		if (verbose > 3)
+#if SIZEOF_INT == 2
+			rprintf(FINFO,"chunk[%ld] of size %ld at %.0f offset=%.0f\n",
+#else
 			rprintf(FINFO,"chunk[%d] of size %d at %.0f offset=%.0f\n",
+#endif
 				i,len,(double)offset2,(double)offset);
 		
 		if (buf) {
