@@ -6,6 +6,40 @@ import logging
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
+
+
+@dataclass
+class TargetSystem:
+    name: str
+    wcc_system: str
+    link_system: str
+    model: str
+    wcc: str
+    wcl: str
+
+
+# Could extract the tool names from OpenWatcom's specs.owc
+TARGET_SYSTEMS = [
+    TargetSystem(
+        name='dos',
+        wcc_system='dos',
+        link_system='dos',
+        model='l', 
+        wcc='wcc',
+        wcl='wcl',
+    ),
+    TargetSystem(
+        name='dos4g',
+        wcc_system='dos',
+        link_system='dos4g',
+        model='f',
+        wcc='wcc386',
+        wcl='wcl386',
+    ),
+]
+
+TARGET_SYSTEMS_BY_NAME = { i.name : i for i in TARGET_SYSTEMS }
 
 
 class WatcomTool(enum.Enum):
@@ -53,8 +87,14 @@ def do_main():
 
     logging.debug('Unknown args: %s', unknown_args)
 
+    if not args.target in TARGET_SYSTEMS_BY_NAME:
+        print('Target system must be one of: ' + ' '.join(sorted(TARGET_SYSTEMS_BY_NAME.keys())))
+        exit(1)
+
+    target_system = TARGET_SYSTEMS_BY_NAME[args.target]
+
     if args.version:
-        print('Open Watcom Driver for rsync')
+        run_cmd([target_system.wcc])
         exit(0)
 
     # Extract filename arguments
@@ -95,8 +135,6 @@ def do_main():
 
     logging.debug('invoke_tool: %s, do_compile: %s, do_link: %s', invoke_tool, 'yes' if do_compile else 'no', 'yes' if do_link else 'no')
 
-    # Could extract the tool names from OpenWatcom's specs.owc
-    target_system = args.target
     cmd = None
 
     # Settings for DOS rsync build
@@ -116,15 +154,15 @@ def do_main():
 
     WATCOM_INC = os.path.join(WATCOM_DIR, 'h')
     WATT32_INC = os.path.join(WATT32_DIR, 'inc')
-    WATT32_LIB = os.path.join(WATT32_DIR, 'lib', 'wattcpwl.lib')
+    WATT32_LIB = os.path.join(WATT32_DIR, 'lib', f'wattcpw{target_system.model}.lib')
 
     # Build the command line for each tool
     if invoke_tool == WatcomTool.WCL:
         # For the configure step "checking whether the C compiler works"
         cmd = [
-            'wcl',
-            f'-bt={target_system}',     # compile for target OS
-            '-j',                       # change char default to signed
+            target_system.wcl,
+            f'-bcl={target_system.link_system}',# compile and link for OS.
+            '-j',                               # change char default to signed
         ]
 
         if args.output:
@@ -138,11 +176,11 @@ def do_main():
             ]
     elif invoke_tool == WatcomTool.WCC:
         cmd = [
-            'wcc', 
-            '-q',                   # operate quietly
-            f'-bt={target_system}', # build target for operating system
-            '-wx',                  # set warning level to maximum setting
-            '-j',                   # change char default from unsigned to signed
+            target_system.wcc,
+            '-q',                               # operate quietly
+            f'-bt={target_system.wcc_system}',  # build target for operating system
+            '-wx',                              # set warning level to maximum setting
+            '-j',                               # change char default from unsigned to signed
         ]
 
         if args.output:
@@ -150,13 +188,19 @@ def do_main():
                 f'-fo={args.output}'    # set object or preprocessor output file name
             ]
 
-        if target_system == 'dos':
+        if target_system.name == 'dos':
             cmd += [
                 '-0',   # 8086 instructions
                 '-ml',  # large memory model (large code/large data)
                 '-fpc', # calls to floating-point library
                 '-zu',  # SS != DGROUP
                 '-zm',  # place functions in separate segments
+            ]
+        elif target_system.name == 'dos4g':
+            cmd += [
+                '-3r',  # 386 register calling conventions
+                '-mf',  # flat memory model (small code/small data assuming CS=DS=SS=ES)
+                '-fpc', # calls to floating-point library
             ]
 
         if args.enable_debug:
@@ -167,16 +211,29 @@ def do_main():
         else:
             cmd += [
                 '-d0',  # no debugging information
-                '-os',  # optimize for space
                 '-s',   # remove stack overflow checks
-                '-zc',  # place strings in CODE segment
                 '-zl',  # remove default library information
                 '-zld', # remove file dependency information
             ]
+
+            if target_system.name == 'dos':
+                cmd += [
+                    '-os',  # optimize for space
+                    '-zc',  # place strings in CODE segment
+                ]
+            elif target_system.name == 'dos4g':
+                cmd += [
+                    '-em',  # force enum base type to use minimum integral type
+                    '-oh',  # enable expensive optimizations (longer compiles)
+                    '-ok',  # include prologue/epilogue in flow graph
+                    '-or',  # reorder instructions for best pipeline usage
+                    '-os',  # favor code size over execution time in optimizations
+                ]
+
     elif invoke_tool == WatcomTool.WLINK:
         cmd = [
             'wlink',
-            'system', target_system,
+            'system', target_system.link_system,
             'option', 'caseexact',
             'option', 'map',
             'option', 'eliminate',
@@ -189,7 +246,7 @@ def do_main():
                 'name', args.output
             ]
 
-        if target_system == 'dos':
+        if target_system.name == 'dos':
             cmd += [
                 'option', 'dosseg'
             ]
