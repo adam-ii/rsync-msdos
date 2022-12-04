@@ -7,7 +7,7 @@
 #include "poptint.h"
 
 #ifdef MSDOS
-#include <process.h>
+#define DISABLE_EXEC
 #endif
 
 #ifndef HAVE_STRERROR
@@ -22,11 +22,13 @@ static char * strerror(int errno) {
 }
 #endif
 
+#ifdef DISABLE_EXEC
 void poptSetExecPath(poptContext con, const char * path, int allowAbsolute) {
     if (con->execPath) xfree(con->execPath);
     con->execPath = xstrdup(path);
     con->execAbsolute = allowAbsolute;
 }
+#endif
 
 static void invokeCallbacks(poptContext con, const struct poptOption * table,
 			    int post) {
@@ -135,6 +137,7 @@ void poptResetContext(poptContext con) {
     }
 }
 
+#ifndef DISABLE_EXEC
 /* Only one of longName, shortName may be set at a time */
 static int handleExec(poptContext con, char * longName, char shortName) {
     int i;
@@ -177,6 +180,7 @@ static int handleExec(poptContext con, char * longName, char shortName) {
 
     return 1;
 }
+#endif
 
 /* Only one of longName, shortName may be set at a time */
 static int handleAlias(poptContext con, const char * longName, char shortName,
@@ -220,6 +224,7 @@ static int handleAlias(poptContext con, const char * longName, char shortName,
     return 1;
 }
 
+#ifndef DISABLE_EXEC
 static void execCommand(poptContext con) {
     const char ** argv;
     int pos = 0;
@@ -271,12 +276,9 @@ static void execCommand(poptContext con) {
 #endif
 #endif
 
-#ifdef __WATCOMC__
-	execvp(argv[0], argv);
-#else
     execvp(argv[0], (char *const *)argv);
-#endif
 }
+#endif
 
 /*@observer@*/ static const struct poptOption *
 findOption(const struct poptOption * table, const char * longName,
@@ -427,7 +429,9 @@ int poptGetNextOpt(poptContext con)
 	}
 	if (!con->os->nextCharArg && con->os->next == con->os->argc) {
 	    invokeCallbacks(con, con->options, 1);
+#ifndef DISABLE_EXEC
 	    if (con->doExec) execCommand(con);
+#endif
 	    return -1;
 	}
 
@@ -474,8 +478,10 @@ int poptGetNextOpt(poptContext con)
 		/* XXX aliases with arg substitution need "--alias=arg" */
 		if (handleAlias(con, optString, '\0', NULL))
 		    continue;
+#ifndef DISABLE_EXEC
 		if (handleExec(con, optString, '\0'))
 		    continue;
+#endif
 
 		/* Check for "--long=arg" option. */
 		for (oe = optString; *oe && *oe != '='; oe++)
@@ -514,8 +520,10 @@ int poptGetNextOpt(poptContext con)
 		origOptString++;
 		continue;
 	    }
+#ifndef DISABLE_EXEC
 	    if (handleExec(con, NULL, *origOptString))
 		continue;
+#endif
 
 	    opt = findOption(con->options, NULL, *origOptString, &cb,
 			     &cbData, 0);
