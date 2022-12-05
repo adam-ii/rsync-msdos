@@ -34,8 +34,10 @@
 #include "rsync.h"
 
 
-/* Establish a proxy connection on an open socket to a web roxy by
- * using the CONNECT method. */
+/**
+ * Establish a proxy connection on an open socket to a web proxy by
+ * using the HTTP CONNECT method.
+ **/
 static int establish_proxy_connection(int fd, char *host, int port)
 {
 	char buffer[1024];
@@ -68,7 +70,7 @@ static int establish_proxy_connection(int fd, char *host, int port)
 			buffer);
 		return -1;
 	}
-	for (cp = &buffer[5]; isdigit(*cp) || (*cp == '.'); cp++)
+	for (cp = &buffer[5]; isdigit(* (unsigned char *) cp) || (*cp == '.'); cp++)
 		;
 	while (*cp == ' ')
 		cp++;
@@ -375,7 +377,7 @@ int is_a_socket(int fd)
 }
 
 
-void start_accept_loop(int port, int (*fn)(int ))
+void start_accept_loop(int port, int (*fn)(int, int))
 {
 	int s;
 	extern char *bind_address;
@@ -430,11 +432,14 @@ void start_accept_loop(int port, int (*fn)(int ))
 #endif
 
 		if ((pid = fork()) == 0) {
+			int ret;
 			close(s);
 			/* open log file in child before possibly giving
 			   up privileges  */
 			log_open();
-			_exit(fn(fd));
+			ret = fn(fd, fd);
+			close_all();
+			_exit(ret);
 		} else if (pid < 0) {
 			rprintf(FERROR,
 				RSYNC_NAME
@@ -497,9 +502,9 @@ struct
 
 	
 
-/****************************************************************************
-set user socket options
-****************************************************************************/
+/**
+ * Set user socket options
+ **/
 void set_socket_options(int fd, char *options)
 {
 	char *tok;
@@ -557,9 +562,9 @@ void set_socket_options(int fd, char *options)
 	free(options);
 }
 
-/****************************************************************************
-become a daemon, discarding the controlling terminal
-****************************************************************************/
+/**
+ * Become a daemon, discarding the controlling terminal
+ **/
 void become_daemon(void)
 {
 	int i;
@@ -589,14 +594,15 @@ void become_daemon(void)
 }
 
 
-/*******************************************************************
-this is like socketpair but uses tcp. It is used by the Samba
-regression test code
-The function guarantees that nobody else can attach to the socket,
-or if they do that this function fails and the socket gets closed
-returns 0 on success, -1 on failure
-the resulting file descriptors are symmetrical
- ******************************************************************/
+/**
+ * This is like socketpair but uses tcp. It is used by the Samba
+ * regression test code.
+ * 
+ * The function guarantees that nobody else can attach to the socket,
+ * or if they do that this function fails and the socket gets closed
+ * returns 0 on success, -1 on failure the resulting file descriptors
+ * are symmetrical.
+ **/
 static int socketpair_tcp(int fd[2])
 {
 	int listener;

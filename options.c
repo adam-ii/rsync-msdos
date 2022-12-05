@@ -1,22 +1,22 @@
 /*  -*- c-file-style: "linux" -*-
-    
-    Copyright (C) 1998-2001 by Andrew Tridgell <tridge@samba.org>
-    Copyright (C) 2000, 2001, 2002 by Martin Pool <mbp@samba.org>
-   
-   This program is free software; you can redistribute it and/or modify
-   it under the terms of the GNU General Public License as published by
-   the Free Software Foundation; either version 2 of the License, or
-   (at your option) any later version.
-   
-   This program is distributed in the hope that it will be useful,
-   but WITHOUT ANY WARRANTY; without even the implied warranty of
-   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-   GNU General Public License for more details.
-   
-   You should have received a copy of the GNU General Public License
-   along with this program; if not, write to the Free Software
-   Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-*/
+ * 
+ * Copyright (C) 1998-2001 by Andrew Tridgell <tridge@samba.org>
+ * Copyright (C) 2000, 2001, 2002 by Martin Pool <mbp@samba.org>
+ * 
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ * 
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ */
 
 #include "rsync.h"
 #include "popt.h"
@@ -24,14 +24,13 @@
 int make_backups = 0;
 
 /**
- * Should we send the whole file as literal data rather than trying to
- * create an incremental diff?  This is on by default when both source
- * and destination are local and we're not doing a batch delta,
- * because there it's no cheaper to read the whole basis file than to
- * just rewrite it.
+ * If True, send the whole file as literal data rather than trying to
+ * create an incremental diff.
  *
  * If both are 0, then look at whether we're local or remote and go by
  * that.
+ *
+ * @sa disable_deltas_p()
  **/
 int whole_file = 0;
 int no_whole_file = 0;
@@ -67,7 +66,8 @@ int module_id = -1;
 int am_server = 0;
 int am_sender = 0;
 int recurse = 0;
-int am_daemon=0;
+int am_daemon = 0;
+int daemon_over_rsh = 0;
 int do_stats=0;
 int do_progress=0;
 int keep_partial=0;
@@ -81,12 +81,9 @@ int only_existing=0;
 int opt_ignore_existing=0;
 int max_delete=0;
 int ignore_errors=0;
-#ifdef _WIN32
-int modify_window=2;
-#else
 int modify_window=0;
-#endif
 int blocking_io=-1;
+
 
 /** Network address family. **/
 #ifdef INET6
@@ -102,17 +99,19 @@ int no_detach = 0;
 
 int write_batch = 0;
 int read_batch = 0;
+int suffix_specified = 0;
 
 char *backup_suffix = BACKUP_SUFFIX;
 char *tmpdir = NULL;
 char *compare_dest = NULL;
-char *config_file = RSYNCD_CONF;
+char *config_file = NULL;
 char *shell_cmd = NULL;
 char *log_format = NULL;
 char *password_file = NULL;
 char *rsync_path = RSYNC_PATH;
 char *backup_dir = NULL;
 int rsync_port = RSYNC_PORT;
+int link_dest = 0;
 
 int verbose = 0;
 int quiet = 0;
@@ -170,6 +169,10 @@ static void print_rsync_version(enum logcode f)
 		ipv6, 
 		(int) (sizeof(dumstat->st_ino) * 8),
 		(int) (sizeof(INO64_T) * 8));
+#ifdef MAINTAINER_MODE
+	rprintf(f, "              panic action: \"%s\"\n",
+		get_panic_action());
+#endif
 
 #ifdef NO_INT64
         rprintf(f, "WARNING: no 64-bit integers on this platform!\n");
@@ -200,6 +203,7 @@ void usage(enum logcode F)
   rprintf(F,"  or   rsync [OPTION]... [USER@]HOST::SRC [DEST]\n");
   rprintf(F,"  or   rsync [OPTION]... SRC [SRC]... [USER@]HOST::DEST\n");
   rprintf(F,"  or   rsync [OPTION]... rsync://[USER@]HOST[:PORT]/SRC [DEST]\n");
+  rprintf(F,"  or   rsync [OPTION]... SRC [SRC]... rsync://[USER@]HOST[:PORT]/DEST\n");
   rprintf(F,"SRC on single-colon remote HOST will be expanded by remote shell\n");
 #endif
   rprintf(F,"SRC on server remote HOST may contain shell wildcards or multiple\n");
@@ -208,7 +212,7 @@ void usage(enum logcode F)
   rprintf(F," -v, --verbose               increase verbosity\n");
   rprintf(F," -q, --quiet                 decrease verbosity\n");
   rprintf(F," -c, --checksum              always checksum\n");
-  rprintf(F," -a, --archive               archive mode\n");
+  rprintf(F," -a, --archive               archive mode, equivalent to -rlptgoD\n");
   rprintf(F," -r, --recursive             recurse into directories\n");
   rprintf(F," -R, --relative              use relative path names\n");
 #ifndef NOSHELLORSERVER
@@ -240,7 +244,7 @@ void usage(enum logcode F)
   rprintf(F,"     --no-whole-file         turn off --whole-file\n");
   rprintf(F," -x, --one-file-system       don't cross filesystem boundaries\n");
   rprintf(F," -B, --block-size=SIZE       checksum blocking size (default %d)\n",BLOCK_SIZE);  
-  rprintf(F," -e, --rsh=COMMAND           specify rsh replacement\n");
+  rprintf(F," -e, --rsh=COMMAND           specify the remote shell\n");
   rprintf(F,"     --rsync-path=PATH       specify path to rsync on the remote machine\n");
   rprintf(F," -C, --cvs-exclude           auto ignore files in the same way CVS does\n");
 #endif
@@ -309,7 +313,7 @@ enum {OPT_VERSION = 1000, OPT_SUFFIX, OPT_SENDER, OPT_SERVER, OPT_EXCLUDE,
       OPT_EXCLUDE_FROM, OPT_DELETE, OPT_DELETE_EXCLUDED, OPT_NUMERIC_IDS,
       OPT_RSYNC_PATH, OPT_FORCE, OPT_TIMEOUT, OPT_DAEMON, OPT_CONFIG, OPT_PORT,
       OPT_INCLUDE, OPT_INCLUDE_FROM, OPT_STATS, OPT_PARTIAL, OPT_PROGRESS,
-      OPT_COPY_UNSAFE_LINKS, OPT_SAFE_LINKS, OPT_COMPARE_DEST,
+      OPT_COPY_UNSAFE_LINKS, OPT_SAFE_LINKS, OPT_COMPARE_DEST, OPT_LINK_DEST,
       OPT_LOG_FORMAT, OPT_PASSWORD_FILE, OPT_SIZE_ONLY, OPT_ADDRESS,
       OPT_DELETE_AFTER, OPT_EXISTING, OPT_MAX_DELETE, OPT_BACKUP_DIR, 
       OPT_IGNORE_ERRORS, OPT_BWLIMIT, OPT_BLOCKING_IO,
@@ -320,7 +324,7 @@ static struct poptOption long_options[] = {
   /* longName, shortName, argInfo, argPtr, value, descrip, argDesc */
   {"version",          0,  POPT_ARG_NONE,   0,             OPT_VERSION, 0, 0},
 #ifndef NOSHELLORSERVER
-  {"suffix",           0,  POPT_ARG_STRING, &backup_suffix,	0, 0, 0 },
+  {"suffix",           0,  POPT_ARG_STRING, &backup_suffix,	OPT_SUFFIX, 0, 0 },
   {"rsync-path",       0,  POPT_ARG_STRING, &rsync_path,	0, 0, 0 },
   {"password-file",    0,  POPT_ARG_STRING, &password_file,	0, 0, 0 },
 #endif
@@ -333,7 +337,7 @@ static struct poptOption long_options[] = {
   {"delete",           0,  POPT_ARG_NONE,   &delete_mode , 0, 0, 0 },
   {"existing",         0,  POPT_ARG_NONE,   &only_existing , 0, 0, 0 },
   {"ignore-existing",  0,  POPT_ARG_NONE,   &opt_ignore_existing , 0, 0, 0 },
-  {"delete-after",     0,  POPT_ARG_NONE,   &delete_after , 0, 0, 0 },
+  {"delete-after",     0,  POPT_ARG_NONE,   0,              OPT_DELETE_AFTER, 0, 0 },
   {"delete-excluded",  0,  POPT_ARG_NONE,   0,              OPT_DELETE_EXCLUDED, 0, 0 },
   {"force",            0,  POPT_ARG_NONE,   &force_delete , 0, 0, 0 },
 #ifndef NOSHELLORSERVER
@@ -387,6 +391,7 @@ static struct poptOption long_options[] = {
   {"timeout",          0,  POPT_ARG_INT,    &io_timeout , 0, 0, 0 },
   {"temp-dir",        'T', POPT_ARG_STRING, &tmpdir , 0, 0, 0 },
   {"compare-dest",     0,  POPT_ARG_STRING, &compare_dest , 0, 0, 0 },
+  {"link-dest",        0,  POPT_ARG_STRING, 0,               OPT_LINK_DEST, 0, 0 },
 #endif
   /* TODO: Should this take an optional int giving the compression level? */
 #ifndef DISABLE_ZLIB
@@ -427,9 +432,11 @@ static struct poptOption long_options[] = {
 static char err_buf[100];
 
 
-/* We store the option error message, if any, so that we can log the
-   connection attempt (which requires parsing the options), and then
-   show the error later on. */
+/**
+ * Store the option error message, if any, so that we can log the
+ * connection attempt (which requires parsing the options), and then
+ * show the error later on.
+ **/
 void option_error(void)
 {
 	if (err_buf[0]) {
@@ -443,7 +450,10 @@ void option_error(void)
 	}
 }
 
-/* check to see if we should refuse this option */
+
+/**
+ * Check to see if we should refuse this option
+ **/
 static int check_refuse_options(char *ref, int opt)
 {
 	int i, len;
@@ -483,9 +493,14 @@ static int count_args(char const **argv)
 }
 
 
-/* Process command line arguments.  Called on both local and remote.
- * Returns if all options are OK, otherwise fills in err_buf and
- * returns 0. */
+/**
+ * Process command line arguments.  Called on both local and remote.
+ *
+ * @retval 1 if all options are OK; with globals set to appropriate
+ * values
+ *
+ * @retval 0 on error, with err_buf containing an explanation
+ **/
 int parse_arguments(int *argc, const char ***argv, int frommain)
 {
 	int opt;
@@ -511,13 +526,25 @@ int parse_arguments(int *argc, const char ***argv, int frommain)
                         print_rsync_version(FINFO);
 			exit_cleanup(0);
 			
+		case OPT_SUFFIX:
+                        /* The value has already been set by popt, but
+                         * we need to remember that a suffix was specified
+                         * in case a backup-directory is used. */
+                        suffix_specified = 1;
+			break;
+			
 		case OPT_MODIFY_WINDOW:
                         /* The value has already been set by popt, but
                          * we need to remember that we're using a
                          * non-default setting. */
 			modify_window_set = 1;
 			break;
-			
+
+		case OPT_DELETE_AFTER:
+			delete_after = 1;
+			delete_mode = 1;
+			break;
+
 		case OPT_DELETE_EXCLUDED:
 			delete_excluded = 1;
 			delete_mode = 1;
@@ -617,6 +644,19 @@ int parse_arguments(int *argc, const char ***argv, int frommain)
 			/* popt stores the filename in batch_prefix for us */
 			read_batch = 1;
 			break;
+		case OPT_LINK_DEST:
+#if HAVE_LINK
+			compare_dest = (char *)poptGetOptArg(pc);
+			link_dest = 1;
+			break;
+#else
+			snprintf(err_buf,sizeof(err_buf),
+                                 "hard links are not supported on this %s\n",
+				 am_server ? "server" : "client");
+			rprintf(FERROR,"ERROR: hard links not supported on this platform\n");
+			return 0;
+#endif
+
 
 		default:
                         /* FIXME: If --daemon is specified, then errors for later
@@ -656,8 +696,14 @@ int parse_arguments(int *argc, const char ***argv, int frommain)
 }
 
 
-/* Construct a filtered list of options to pass through from the
- * client to the server */
+/**
+ * Construct a filtered list of options to pass through from the
+ * client to the server.
+ *
+ * This involves setting options that will tell the server how to
+ * behave, and also filtering out options that are processed only
+ * locally.
+ **/
 void server_options(char **args,int *argc)
 {
 	int ac = *argc;
@@ -676,6 +722,13 @@ void server_options(char **args,int *argc)
 		blocking_io = 0;
 
 	args[ac++] = "--server";
+
+	if (daemon_over_rsh) {
+		args[ac++] = "--daemon";
+		*argc = ac;
+		/* if we're passing --daemon, we're done */
+		return;
+	}
 
 	if (!am_sender)
 		args[ac++] = "--sender";
@@ -844,7 +897,7 @@ void server_options(char **args,int *argc)
 		 *   and it may be an older version that doesn't know this
 		 *   option, so don't send it if client is the sender.
 		 */
-		args[ac++] = "--compare-dest";
+		args[ac++] = link_dest ? "--link-dest" : "--compare-dest";
 		args[ac++] = compare_dest;
 	}
 

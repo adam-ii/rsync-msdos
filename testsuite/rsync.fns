@@ -191,11 +191,8 @@ use chroot = no
 hosts allow = localhost, 127.0.0.1
 log file = $logfile
 
-# We don't know if this machine has "nobody" or "nogroup", so use the quasi-canonical
-# values of (uint16_t) -2. 
-
-uid = 65534
-gid = 65534
+uid = 0
+gid = 0
 
 [test-from]
 	path = $FROM
@@ -253,6 +250,8 @@ do
 	fi
    done
 done
+# ok, now get rid of it
+rm "$scratchdir/testlink"
 
 
 if [ "x$TEST_SYMLINK_CMD" = 'x' ]

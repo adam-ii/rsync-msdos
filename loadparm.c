@@ -479,11 +479,12 @@ static int strwicmp(char *psz1, char *psz2)
    /* sync the strings on first non-whitespace */
    while (1)
    {
-      while (isspace(*psz1))
+      while (isspace(* (unsigned char *) psz1))
          psz1++;
-      while (isspace(*psz2))
+      while (isspace(* (unsigned char *) psz2))
          psz2++;
-      if (toupper(*psz1) != toupper(*psz2) || *psz1 == '\0' || *psz2 == '\0')
+      if (toupper(* (unsigned char *) psz1) != toupper(* (unsigned char *) psz2)
+	  || *psz1 == '\0' || *psz2 == '\0')
          break;
       psz1++;
       psz2++;
@@ -747,6 +748,9 @@ False on failure.
 ***************************************************************************/
 BOOL lp_load(char *pszFname, int globals_only)
 {
+	extern int am_server;
+	extern int am_daemon;
+	extern int am_root;
 	pstring n2;
 	BOOL bRetval;
  
@@ -756,7 +760,12 @@ BOOL lp_load(char *pszFname, int globals_only)
   
 	init_globals();
 
-	pstrcpy(n2,pszFname);
+	if (pszFname)
+	    pstrcpy(n2,pszFname);
+	else if (am_server && am_daemon && !am_root)
+	    pstrcpy(n2,RSYNCD_USERCONF);
+	else
+	    pstrcpy(n2,RSYNCD_SYSCONF);
 
 	/* We get sections first, so have to start 'behind' to make up */
 	iServiceIndex = -1;

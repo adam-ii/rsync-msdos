@@ -26,7 +26,8 @@
 #define RSYNC_RSH_ENV "RSYNC_RSH"
 
 #define RSYNC_NAME "rsync"
-#define RSYNCD_CONF "/etc/rsyncd.conf"
+#define RSYNCD_SYSCONF "/etc/rsyncd.conf"
+#define RSYNCD_USERCONF "rsyncd.conf"
 
 #define DEFAULT_LOCK_FILE "/var/run/rsyncd.lock"
 #define URL_PREFIX "rsync://"
@@ -349,6 +350,10 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 #define INADDR_NONE 0xffffffff
 #endif
 
+#ifndef IN_LOOPBACKNET
+#define IN_LOOPBACKNET 127
+#endif
+
 struct file_struct {
 	unsigned flags;
 	time_t modtime;
@@ -393,19 +398,19 @@ struct file_list {
 };
 
 struct sum_buf {
-	OFF_T offset;		/* offset in file of this chunk */
-	int len;		/* length of chunk of file */
-	int i;			/* index of this chunk */
-	uint32 sum1;	        /* simple checksum */
-	char sum2[SUM_LENGTH];	/* checksum  */
+	OFF_T offset;		/**< offset in file of this chunk */
+	int len;		/**< length of chunk of file */
+	int i;			/**< index of this chunk */
+	uint32 sum1;	        /**< simple checksum */
+	char sum2[SUM_LENGTH];	/**< checksum  */
 };
 
 struct sum_struct {
-	OFF_T flength;		/* total file length */
-	size_t count;		/* how many chunks */
-	size_t remainder;	/* flength % block_length */
-	size_t n;		/* block_length */
-	struct sum_buf *sums;	/* points to info for each chunk */
+	OFF_T flength;		/**< total file length */
+	size_t count;		/**< how many chunks */
+	size_t remainder;	/**< flength % block_length */
+	size_t n;		/**< block_length */
+	struct sum_buf *sums;	/**< points to info for each chunk */
 };
 
 struct map_struct {
@@ -638,11 +643,11 @@ inet_ntop(int af, const void *src, char *dst, size_t size);
 #endif /* !HAVE_INET_NTOP */
 
 #ifndef HAVE_INET_PTON
-#ifdef MSDOS
 int inet_pton(int af, const char *src, void *dst);
-#else
-int isc_net_pton(int af, const char *src, void *dst);
 #endif
+
+#ifdef MAINTAINER_MODE
+const char *get_panic_action(void);
 #endif
 
 #define UNUSED(x) x __attribute__((__unused__))
@@ -651,3 +656,5 @@ int isc_net_pton(int af, const char *src, void *dst);
 inline int getpid() { return 0; }
 inline int getuid() { return 0; }
 #endif
+
+extern const char *io_write_phase, *io_read_phase;
