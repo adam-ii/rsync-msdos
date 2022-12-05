@@ -21,6 +21,7 @@
 
 #include "rsync.h"
 
+#ifndef NOSHELLORSERVER
 /**
  * Create a child connected to use on stdin/stdout.
  *
@@ -144,5 +145,6 @@ pid_t local_child(int argc, char **argv,int *f_in,int *f_out,
   
 	return pid;
 }
+#endif
 
 
