@@ -43,7 +43,11 @@ static unsigned long msdiff(struct timeval *t1, struct timeval *t2)
 static void rprint_progress(OFF_T ofs, OFF_T size, struct timeval *now,
 			    int is_last)
 {
+#if SIZEOF_INT == 2
+    int32         pct  = (ofs == size) ? 100 : (int32)((100.0*ofs)/size);
+#else
     int           pct  = (ofs == size) ? 100 : (int)((100.0*ofs)/size);
+#endif
     unsigned long diff = msdiff(&start_time, now);
     double        rate = diff ? (double) (ofs-start_ofs) * 1000.0 / diff / 1024.0 : 0;
     const char    *units;
@@ -55,9 +59,17 @@ static void rprint_progress(OFF_T ofs, OFF_T size, struct timeval *now,
     double        remain = is_last
                         ? (double) diff / 1000.0
                         : rate ? (double) (size-ofs) / rate / 1000.0 : 0.0;
+#if SIZEOF_INT == 2
+    int32 	  remain_h, remain_m, remain_s;
+#else
     int 	  remain_h, remain_m, remain_s;
+#endif
 
+#if SIZEOF_INT == 2
+    if (rate > 1024L*1024L) {
+#else
     if (rate > 1024*1024) {
+#endif
 	    rate /= 1024.0 * 1024.0;
 	    units = "GB/s";
     } else if (rate > 1024) {
@@ -67,11 +79,20 @@ static void rprint_progress(OFF_T ofs, OFF_T size, struct timeval *now,
 	    units = "kB/s";
     }
 
+#if SIZEOF_INT == 2
+    remain_s = (int) ((int32) remain % 60);
+    remain_m = (int) ((int32) (remain / 60.0) % 60);
+#else
     remain_s = (int) remain % 60;
     remain_m = (int) (remain / 60.0) % 60;
+#endif
     remain_h = (int) (remain / 3600.0);
     
+#if SIZEOF_INT == 2
+    rprintf(FINFO, "%12.0f %3ld%% %7.2f%s %4ld:%02ld:%02ld%s",
+#else
     rprintf(FINFO, "%12.0f %3d%% %7.2f%s %4d:%02d:%02d%s",
+#endif
 	    (double) ofs, pct, rate, units,
 	    remain_h, remain_m, remain_s,
 	    is_last ? "\n" : "\r");
