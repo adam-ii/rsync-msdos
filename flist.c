@@ -61,8 +61,6 @@ extern int sanitize_paths;
 extern int read_batch;
 extern int write_batch;
 
-static char topsrcname[MAXPATHLEN];
-
 static struct exclude_struct **local_exclude_list;
 
 static struct file_struct null_file;
@@ -192,44 +190,59 @@ static void list_file_entry(struct file_struct *f)
 }
 
 
-int readlink_stat(const char *Path, STRUCT_STAT * Buffer, char *Linkbuf)
+/**
+ * Stat either a symlink or its referent, depending on the settings of
+ * copy_links, copy_unsafe_links, etc.
+ *
+ * @retval -1 on error
+ *
+ * @retval 0 for success
+ *
+ * @post If @p path is a symlink, then @p linkbuf (of size @c
+ * MAXPATHLEN) contains the symlink target.
+ *
+ * @post @p buffer contains information about the link or the
+ * referrent as appropriate, if they exist.
+ **/
+int readlink_stat(const char *path, STRUCT_STAT * buffer, char *linkbuf)
 {
 #if SUPPORT_LINKS
 	if (copy_links) {
-		return do_stat(Path, Buffer);
+		return do_stat(path, buffer);
 	}
-	if (do_lstat(Path, Buffer) == -1) {
+	if (do_lstat(path, buffer) == -1) {
 		return -1;
 	}
-	if (S_ISLNK(Buffer->st_mode)) {
+	if (S_ISLNK(buffer->st_mode)) {
 		int l;
-		if ((l =
-		     readlink((char *) Path, Linkbuf,
-			      MAXPATHLEN - 1)) == -1) {
+		l = readlink((char *) path, linkbuf, MAXPATHLEN - 1);
+		if (l == -1) 
 			return -1;
-		}
-		Linkbuf[l] = 0;
-		if (copy_unsafe_links && (topsrcname[0] != '\0') &&
-		    unsafe_symlink(Linkbuf, topsrcname)) {
-			return do_stat(Path, Buffer);
+		linkbuf[l] = 0;
+		if (copy_unsafe_links && unsafe_symlink(linkbuf, path)) {
+			if (verbose > 1) {
+				rprintf(FINFO,"copying unsafe symlink \"%s\" -> \"%s\"\n", 
+					path, linkbuf);
+			}
+			return do_stat(path, buffer);
 		}
 	}
 	return 0;
 #else
-	return do_stat(Path, Buffer);
+	return do_stat(path, buffer);
 #endif
 }
 
-int link_stat(const char *Path, STRUCT_STAT * Buffer)
+int link_stat(const char *path, STRUCT_STAT * buffer)
 {
 #if SUPPORT_LINKS
 	if (copy_links) {
-		return do_stat(Path, Buffer);
+		return do_stat(path, buffer);
 	} else {
-		return do_lstat(Path, Buffer);
+		return do_lstat(path, buffer);
 	}
 #else
-	return do_stat(Path, Buffer);
+	return do_stat(path, buffer);
 #endif
 }
 
@@ -342,6 +355,8 @@ static void send_file_entry(struct file_struct *file, int f,
 		return;
 	}
 
+	io_write_phase = "send_file_entry";
+
 	fname = f_name(file);
 
 	flags = base_flags;
@@ -437,6 +452,8 @@ static void send_file_entry(struct file_struct *file, int f,
 
 	strlcpy(lastname, fname, MAXPATHLEN);
 	lastname[MAXPATHLEN - 1] = 0;
+
+	io_write_phase = "unknown";
 }
 
 
@@ -522,7 +539,7 @@ static void receive_file_entry(struct file_struct **fptr,
 		    (flags & SAME_GID) ? last_gid : (gid_t) read_int(f);
 	if (preserve_devices && IS_DEVICE(file->mode))
 		file->rdev =
-		    (flags & SAME_RDEV) ? last_rdev : (dev_t) read_int(f);
+		    (flags & SAME_RDEV) ? last_rdev : (DEV64_T) read_int(f);
 
 	if (preserve_links && S_ISLNK(file->mode)) {
 		int l = read_int(f);
@@ -644,8 +661,10 @@ struct file_struct *make_file(int f, char *fname, struct string_area **ap,
 
 	if (readlink_stat(fname, &st, linkbuf) != 0) {
 		int save_errno = errno;
-		if ((errno == ENOENT) && copy_links && !noexcludes) {
-			/* symlink pointing nowhere, see if excluded */
+		if ((errno == ENOENT) && !noexcludes) {
+			/* either symlink pointing nowhere or file that 
+			 * was removed during rsync run; see if excluded
+			 * before reporting an error */
 			memset((char *) &st, 0, sizeof(st));
 			if (check_exclude_file(f, fname, &st)) {
 				/* file is excluded anyway, ignore silently */
@@ -851,11 +870,11 @@ static void send_directory(int f, struct file_list *flist, char *dir)
 }
 
 
-/*
+/**
  *
- * I *think* f==-1 means that the list should just be built in memory
- * and not transmitted.  But who can tell? -- mbp
- */
+ * I <b>think</b> f==-1 means that the list should just be built in
+ * memory and not transmitted.  But who can tell? -- mbp
+ **/
 struct file_list *send_file_list(int f, int argc, char *argv[])
 {
 	int i, l;
@@ -877,7 +896,8 @@ struct file_list *send_file_list(int f, int argc, char *argv[])
 	}
 
 	for (i = 0; i < argc; i++) {
-		char *fname = topsrcname;
+		char fname2[MAXPATHLEN];
+		char *fname = fname2;
 
 		strlcpy(fname, argv[i], MAXPATHLEN);
 
@@ -981,8 +1001,6 @@ struct file_list *send_file_list(int f, int argc, char *argv[])
 			}
 		}
 	}
-
-	topsrcname[0] = '\0';
 
 	if (f != -1) {
 		send_file_entry(NULL, f, 0);
@@ -1135,7 +1153,9 @@ int flist_find(struct file_list *flist, struct file_struct *f)
 {
 	int low = 0, high = flist->count - 1;
 
-	if (flist->count <= 0)
+	while (high >= 0 && !flist->files[high]->basename) high--;
+
+	if (high < 0)
 		return -1;
 
 	while (low != high) {
@@ -1177,7 +1197,7 @@ void free_file(struct file_struct *file)
 /*
  * allocate a new file list
  */
-struct file_list *flist_new()
+struct file_list *flist_new(void)
 {
 	struct file_list *flist;
 
@@ -1229,6 +1249,7 @@ void flist_free(struct file_list *flist)
 static void clean_flist(struct file_list *flist, int strip_root)
 {
 	int i;
+	char *name, *prev_name = NULL;
 
 	if (!flist || flist->count == 0)
 		return;
@@ -1236,29 +1257,33 @@ static void clean_flist(struct file_list *flist, int strip_root)
 	qsort(flist->files, flist->count,
 	      sizeof(flist->files[0]), (int (*)()) file_compare);
 
-	for (i = 1; i < flist->count; i++) {
-		if (flist->files[i]->basename &&
-		    flist->files[i - 1]->basename &&
-		    strcmp(f_name(flist->files[i]),
-			   f_name(flist->files[i - 1])) == 0) {
-			if (verbose > 1 && !am_server)
+	for (i = 0; i < flist->count; i++) {
+		if (flist->files[i]->basename) {
+			prev_name = f_name(flist->files[i]);
+			break;
+		}
+	}
+	while (++i < flist->count) {
+		if (!flist->files[i]->basename)
+			continue;
+		name = f_name(flist->files[i]);
+		if (strcmp(name, prev_name) == 0) {
+			if (verbose > 1 && !am_server) {
 				rprintf(FINFO,
 					"removing duplicate name %s from file list %d\n",
-					f_name(flist->files[i - 1]),
-					i - 1);
-			/* it's not great that the flist knows the semantics of the
-			 * file memory usage, but i'd rather not add a flag byte
-			 * to that struct. XXX can i use a bit in the flags field? */
+					name, i);
+			}
+			/* it's not great that the flist knows the semantics of
+			 * the file memory usage, but i'd rather not add a flag
+			 * byte to that struct.
+			 * XXX can i use a bit in the flags field? */
 			if (flist->string_area)
 				flist->files[i][0] = null_file;
 			else
 				free_file(flist->files[i]);
 		}
+		prev_name = name;
 	}
-
-	/* FIXME: There is a bug here when filenames are repeated more
-	 * than once, because we don't handle freed files when doing
-	 * the comparison. */
 
 	if (strip_root) {
 		/* we need to strip off the root directory in the case
@@ -1278,7 +1303,6 @@ static void clean_flist(struct file_list *flist, int strip_root)
 			}
 		}
 	}
-
 
 	if (verbose <= 3)
 		return;

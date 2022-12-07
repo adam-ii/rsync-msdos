@@ -23,9 +23,18 @@
 
 time_t starttime = 0;
 
-struct stats stats;
-
+extern struct stats stats;
 extern int verbose;
+
+/* there's probably never more than at most 2 outstanding child processes,
+ * but set it higher just in case.
+ */
+#define MAXCHILDPROCS 5
+
+struct pid_status {
+	pid_t pid;
+	int   status;
+} pid_stat_table[MAXCHILDPROCS];
 
 static void show_malloc_stats(void);
 
@@ -35,11 +44,27 @@ wait for a process to exit, calling io_flush while waiting
 ****************************************************************************/
 void wait_process(pid_t pid, int *status)
 {
-	while (waitpid(pid, status, WNOHANG) == 0) {
+	pid_t waited_pid;
+	int cnt;
+
+	while ((waited_pid = waitpid(pid, status, WNOHANG)) == 0) {
 		msleep(20);
 		io_flush();
 	}
         
+	if ((waited_pid == -1) && (errno == ECHILD)) {
+		/* status of requested child no longer available.
+		 * check to see if it was processed by the sigchld_handler.
+		 */
+		for (cnt = 0;  cnt < MAXCHILDPROCS; cnt++) {
+			if (pid == pid_stat_table[cnt].pid) {
+				*status = pid_stat_table[cnt].status;
+				pid_stat_table[cnt].pid = 0;
+				break;
+			}
+		}
+	}
+
         /* TODO: If the child exited on a signal, then log an
          * appropriate error message.  Perhaps we should also accept a
          * message describing the purpose of the child.  Also indicate
@@ -48,7 +73,6 @@ void wait_process(pid_t pid, int *status)
 	*status = WEXITSTATUS(*status);
 }
 #endif
-
 
 static void report(int f)
 {
@@ -180,9 +204,11 @@ static pid_t do_cmd(char *cmd,char *machine,char *user,char *path,int *f_in,int 
 	int i,argc=0;
 	pid_t ret;
 	char *tok,*dir=NULL;
+	int dash_l_set = 0;
 	extern int local_server;
 	extern char *rsync_path;
 	extern int blocking_io;
+	extern int daemon_over_rsh;
 	extern int read_batch;
 
 	if (!read_batch && !local_server) {
@@ -198,15 +224,22 @@ static pid_t do_cmd(char *cmd,char *machine,char *user,char *path,int *f_in,int 
 			args[argc++] = tok;
 		}
 
+		/* check to see if we've already been given '-l user' in 
+		   the remote-shell command */
+		for (i = 0; i < argc-1; i++) {
+			if (!strcmp(args[i], "-l") && args[i+1][0] != '-')
+				dash_l_set = 1;
+		}
+
 #if HAVE_REMSH
 		/* remsh (on HPUX) takes the arguments the other way around */
 		args[argc++] = machine;
-		if (user) {
+		if (user && !(daemon_over_rsh && dash_l_set)) {
 			args[argc++] = "-l";
 			args[argc++] = user;
 		}
 #else
-		if (user) {
+		if (user && !(daemon_over_rsh && dash_l_set)) {
 			args[argc++] = "-l";
 			args[argc++] = user;
 		}
@@ -224,7 +257,7 @@ static pid_t do_cmd(char *cmd,char *machine,char *user,char *path,int *f_in,int 
 
 	args[argc++] = ".";
 
-	if (path && *path) 
+	if (!daemon_over_rsh && path && *path) 
 		args[argc++] = path;
 
 	args[argc] = NULL;
@@ -239,7 +272,7 @@ static pid_t do_cmd(char *cmd,char *machine,char *user,char *path,int *f_in,int 
 	if (local_server) {
 		if (read_batch)
 		    create_flist_from_batch(); /* sets batch_flist */
-		ret = local_child(argc, args, f_in, f_out);
+		ret = local_child(argc, args, f_in, f_out, child_main);
 	} else {
 		ret = piped_child(args,f_in,f_out);
 	}
@@ -456,6 +489,7 @@ static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
 	}
 	io_flush();
 
+	io_set_error_fd(-1);
 #ifndef NOSHELLORSERVER
 	kill(pid, SIGUSR2);
 	wait_process(pid, &status);
@@ -522,6 +556,13 @@ static void do_server_recv(int f_in, int f_out, int argc,char *argv[])
 
 	status = do_recv(f_in,f_out,flist,local_name);
 	exit_cleanup(status);
+}
+
+
+int child_main(int argc, char *argv[])
+{
+	start_server(STDIN_FILENO, STDOUT_FILENO, argc, argv);
+	return 0;
 }
 
 
@@ -644,7 +685,6 @@ int client_run(int f_in, int f_out, pid_t pid, int argc, char *argv[])
 	local_name = get_local_name(flist,argv[0]);
 	
 	status2 = do_recv(f_in,f_out,flist,local_name);
-
 #ifndef NOSHELLORSERVER	
 	if (pid != -1) {
 		if (verbose > 3)
@@ -653,7 +693,7 @@ int client_run(int f_in, int f_out, pid_t pid, int argc, char *argv[])
 		wait_process(pid, &status);
 	}
 #endif
-
+	
 	return MAX(status, status2);
 }
 
@@ -714,18 +754,18 @@ static int start_client(int argc, char *argv[])
 	extern int am_sender;
 	extern char *shell_cmd;
 	extern int rsync_port;
-	extern int whole_file;
-	extern int write_batch;
+	extern int daemon_over_rsh;
 	extern int read_batch;
 #ifndef MSDOS
 	int rc;
 
 	/* Don't clobber argv[] so that ps(1) can still show the right
            command line. */
-	if ((rc = copy_argv (argv)))
+	if ((rc = copy_argv(argv)))
 		return rc;
 #endif
 
+	/* rsync:// always uses rsync server over direct socket connection */
 	if (strncasecmp(URL_PREFIX, argv[0], strlen(URL_PREFIX)) == 0) {
 		char *host, *path;
 
@@ -735,7 +775,7 @@ static int start_client(int argc, char *argv[])
 			*p = 0;
 			path = p+1;
 		} else {
-			path="";
+			path = "";
 		}
 		p = strchr(host,':');
 		if (p) {
@@ -746,12 +786,17 @@ static int start_client(int argc, char *argv[])
 	}
 
 	if (!read_batch) {
-	    p = find_colon(argv[0]);
+		p = find_colon(argv[0]);
 
 	if (p) {
 		if (p[1] == ':') { /* double colon */
 			*p = 0;
-			return start_socket_client(argv[0], p+2, argc-1, argv+1);
+			if (!shell_cmd) {
+				return start_socket_client(argv[0], p+2,
+							   argc-1, argv+1);
+			}
+			p++;
+			daemon_over_rsh = 1;
 		}
 
 		if (argc < 1) {
@@ -768,12 +813,37 @@ static int start_client(int argc, char *argv[])
 	} else {
 		am_sender = 1;
 
+		/* rsync:// destination uses rsync server over direct socket */
+		if (strncasecmp(URL_PREFIX, argv[argc-1], strlen(URL_PREFIX)) == 0) {
+			char *host, *path;
+
+			host = argv[argc-1] + strlen(URL_PREFIX);
+			p = strchr(host,'/');
+			if (p) {
+				*p = 0;
+				path = p+1;
+			} else {
+				path = "";
+			}
+			p = strchr(host,':');
+			if (p) {
+				rsync_port = atoi(p+1);
+				*p = 0;
+			}
+			return start_socket_client(host, path, argc-1, argv);
+		}
+
 		p = find_colon(argv[argc-1]);
 		if (!p) {
 			local_server = 1;
-		} else if (p[1] == ':') {
+		} else if (p[1] == ':') { /* double colon */
 			*p = 0;
-			return start_socket_client(argv[argc-1], p+2, argc-1, argv);
+			if (!shell_cmd) {
+				return start_socket_client(argv[argc-1], p+2,
+							   argc-1, argv);
+			}
+			p++;
+			daemon_over_rsh = 1;
 		}
 
 		if (argc < 2) {
@@ -830,8 +900,19 @@ static int start_client(int argc, char *argv[])
 	exit_cleanup(RERR_SYNTAX);
 	ret = RERR_SYNTAX;
 #else
-	pid = do_cmd(shell_cmd,shell_machine,shell_user,shell_path,&f_in,&f_out);
-	
+	pid = do_cmd(shell_cmd,shell_machine,shell_user,shell_path,
+		     &f_in,&f_out);
+
+	/* if we're running an rsync server on the remote host over a
+	   remote shell command, we need to do the RSYNCD protocol first */
+	if (daemon_over_rsh) {
+		int tmpret;
+		tmpret = start_inband_exchange(shell_user, shell_path,
+					       f_in, f_out, argc);
+		if (tmpret < 0)
+			return tmpret;
+	}
+
 	ret = client_run(f_in, f_out, pid, argc, argv);
 
 	fflush(stdout);
@@ -855,7 +936,24 @@ static RETSIGTYPE sigusr2_handler(int UNUSED(val)) {
 
 static RETSIGTYPE sigchld_handler(int UNUSED(val)) {
 #ifdef WNOHANG
-	while (waitpid(-1, NULL, WNOHANG) > 0) ;
+	int cnt, status;
+	pid_t pid;
+	/* An empty waitpid() loop was put here by Tridge and we could never
+	 * get him to explain why he put it in, so rather than taking it 
+	 * out we're instead saving the child exit statuses for later use.
+	 * The waitpid() loop presumably eliminates all possibility of leaving
+	 * zombie children, maybe that's why he did it.
+	 */
+	while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+		 /* save the child's exit status */
+		 for (cnt = 0; cnt < MAXCHILDPROCS; cnt++) {
+			  if (pid_stat_table[cnt].pid == 0) {
+				   pid_stat_table[cnt].pid = pid;
+				   pid_stat_table[cnt].status = status;
+				   break;
+			  }
+		 }
+	}
 #endif
 }
 #endif
@@ -875,13 +973,32 @@ static RETSIGTYPE sigchld_handler(int UNUSED(val)) {
  * Solaris?)  Can we be more portable?
  **/
 #ifdef MAINTAINER_MODE
+const char *get_panic_action(void)
+{
+	const char *cmd_fmt = getenv("RSYNC_PANIC_ACTION");
+
+	if (cmd_fmt)
+		return cmd_fmt;
+	else
+		return "xterm -display :0 -T Panic -n Panic "
+			"-e gdb /proc/%d/exe %d";
+}
+
+
+/**
+ * Handle a fatal signal by launching a debugger, controlled by $RSYNC_PANIC_ACTION.
+ *
+ * This signal handler is only installed if we were configured with
+ * --enable-maintainer-mode.  Perhaps it should always be on and we
+ * should just look at the environment variable, but I'm a bit leery
+ * of a signal sending us into a busy loop.
+ **/
 static RETSIGTYPE rsync_panic_handler(int UNUSED(whatsig))
 {
 	char cmd_buf[300];
 	int ret;
-	sprintf(cmd_buf, 
-		"xterm -display :0 -T Panic -n Panic "
-		"-e gdb /proc/%d/exe %d", 
+
+	sprintf(cmd_buf, get_panic_action(),
 		getpid(), getpid());
 
 	/* Unless we failed to execute gdb, we allow the process to
@@ -964,9 +1081,8 @@ int main(int argc,char *argv[])
 	}
 
 #ifndef NOSHELLORSERVER
-	if (am_daemon) {
+	if (am_daemon && !am_server)
 		return daemon_main();
-	}
 #endif
 
 	if (argc < 1) {
@@ -988,6 +1104,8 @@ int main(int argc,char *argv[])
 	if (am_server) {
 		set_nonblocking(STDIN_FILENO);
 		set_nonblocking(STDOUT_FILENO);
+		if (am_daemon)
+			return start_daemon(STDIN_FILENO, STDOUT_FILENO);
 		start_server(STDIN_FILENO, STDOUT_FILENO, argc, argv);
 	}
 #endif
