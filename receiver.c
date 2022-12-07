@@ -361,7 +361,7 @@ int recv_files(int f_in,struct file_list *flist,char *local_name,int f_gen)
 				if (verbose > 2)
 					rprintf(FINFO,"recv_files phase=%d\n",phase);
 #ifdef NOSHELLORSERVER
-				generate_files_phase2(f_out,flist,local_name,-1);
+				generate_files_phase2(f_out,flist,local_name,i);
 #else
 				write_int(f_gen,-1);
 #endif
