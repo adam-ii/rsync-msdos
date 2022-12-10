@@ -17,6 +17,7 @@ class TargetSystem:
     model: str
     wcc: str
     wcl: str
+    stack_size: int
 
 
 # Could extract the tool names from OpenWatcom's specs.owc
@@ -28,6 +29,7 @@ TARGET_SYSTEMS = [
         model='l', 
         wcc='wcc',
         wcl='wcl',
+        stack_size=16*1024,
     ),
     TargetSystem(
         name='dos4g',
@@ -36,6 +38,7 @@ TARGET_SYSTEMS = [
         model='f',
         wcc='wcc386',
         wcl='wcl386',
+        stack_size=32*1024,
     ),
 ]
 
@@ -74,7 +77,7 @@ def do_main():
     parser.add_argument('-Wc,<option>', dest='wcc_option', metavar=' ', type=str, help='pass any option to WCC')
 
     parser.add_argument('-Wl,<option>', dest='wlink_option', metavar=' ', type=str, help='pass any directive to WLINK')
-    parser.add_argument('-mstack-size', dest='stack_size', type=str, metavar='<stack_size>', default='12k', help='set stack size')
+    parser.add_argument('-mstack-size', dest='stack_size', type=str, metavar='<stack_size>', help='set stack size')
 
     parser.add_argument('--version', dest='version', action='store_true')
     args, unknown_args = parser.parse_known_args()
@@ -156,6 +159,8 @@ def do_main():
     WATT32_INC = os.path.join(WATT32_DIR, 'inc')
     WATT32_LIB = os.path.join(WATT32_DIR, 'lib', f'wattcpw{target_system.model}.lib')
 
+    stack_size = args.stack_size if args.stack_size else target_system.stack_size
+
     # Build the command line for each tool
     if invoke_tool == WatcomTool.WCL:
         # For the configure step "checking whether the C compiler works"
@@ -170,9 +175,9 @@ def do_main():
                 f'-fe={args.output}'    # name executable file
             ]
 
-        if args.stack_size:
+        if stack_size:
             cmd += [
-                f'-k{args.stack_size}'  # set stack size
+                f'-k{stack_size}'       # set stack size
             ]
     elif invoke_tool == WatcomTool.WCC:
         cmd = [
@@ -195,6 +200,7 @@ def do_main():
                 '-fpc', # calls to floating-point library
                 '-zu',  # SS != DGROUP
                 '-zm',  # place functions in separate segments
+                '-zc',  # place strings in CODE segment
             ]
         elif target_system.name == 'dos4g':
             cmd += [
@@ -219,7 +225,6 @@ def do_main():
             if target_system.name == 'dos':
                 cmd += [
                     '-os',  # optimize for space
-                    '-zc',  # place strings in CODE segment
                 ]
             elif target_system.name == 'dos4g':
                 cmd += [
@@ -251,9 +256,9 @@ def do_main():
                 'option', 'dosseg'
             ]
 
-        if args.stack_size:
+        if stack_size:
             cmd += [
-                'option', f'stack={args.stack_size}'
+                'option', f'stack={stack_size}'
             ]
 
         if args.enable_debug:

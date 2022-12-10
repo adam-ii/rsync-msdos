@@ -149,7 +149,7 @@ void coroutine_main(void *ret) {
  * initial stack frame for the next coroutine.
  */
 void coroutine_start(void) {
-	char stack[16 * 1024];
+	char stack[4 * 1024];
 	coroutine_main(stack);
 }
 
