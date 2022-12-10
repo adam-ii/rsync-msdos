@@ -87,7 +87,19 @@ then
 else
 	BUILD_ZLIB='$(zlib_OBJS)'
 fi
-	
+
+
+AC_ARG_ENABLE(noserver,
+	AC_HELP_STRING([--enable-noserver],	
+		[enable a limited feature set without server or daemon],
+		[], []))
+if test x"$enable_noserver" == x"yes"
+then
+	BUILD_NOSERVER='$(noserver_OBJS)'
+	CFLAGS="$CFLAGS -DNOSHELLORSERVER"
+else
+	BUILD_NOSERVER=
+fi
 
 # This is needed for our included version of popt.  Kind of silly, but
 # I don't want our version too far out of sync.
@@ -647,6 +659,7 @@ AC_SUBST(OBJ_RESTORE)
 AC_SUBST(CC_SHOBJ_FLAG)
 AC_SUBST(BUILD_POPT)
 AC_SUBST(BUILD_ZLIB)
+AC_SUBST(BUILD_NOSERVER)
 
 AC_CONFIG_FILES([Makefile lib/dummy zlib/dummy popt/dummy shconfig])
 AC_OUTPUT

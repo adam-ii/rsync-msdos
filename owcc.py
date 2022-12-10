@@ -288,7 +288,6 @@ def do_main():
     # Append DOS rsync build settings
     if invoke_tool == WatcomTool.WCL or invoke_tool == WatcomTool.WCC:
         cmd += [
-            '-DNOSHELLORSERVER',
             f'-I{WATT32_INC}',
             f'-I{WATCOM_INC}',
         ]
