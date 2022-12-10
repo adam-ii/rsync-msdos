@@ -652,6 +652,20 @@ const char *get_panic_action(void);
 
 #define UNUSED(x) x __attribute__((__unused__))
 
+#ifdef NOSHELLORSERVER
+#include "lib/picoro.h"
+
+extern coro recv_files_coro;
+
+#define coroutine_yield() \
+	{ if (verbose > 2) rprintf(FINFO, "coroutine_yield(file=%s, line=%d)\n", __FILE__, __LINE__); yield(NULL); }
+#define coroutine_resume(c) \
+	{ if (verbose > 2) rprintf(FINFO, "coroutine_resume(file=%s, line=%d)\n", __FILE__, __LINE__); resume(c, NULL); }
+#else
+#define coroutine_yield() {}
+#define coroutine_resume(c) {}
+#endif
+
 #ifdef MSDOS
 inline int getpid() { return 0; }
 inline int getuid() { return 0; }

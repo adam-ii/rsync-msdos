@@ -394,15 +394,51 @@ static void do_server_sender(int f_in, int f_out, int argc,char *argv[])
 #endif
 
 
+#ifdef NOSHELLORSERVER
+coro recv_files_coro;
+
+struct recv_file_coroutine_args
+{
+	int f_in;
+	struct file_list *flist;
+	char *local_name;
+	int recv_pipe[2];
+};
+
+void *recv_files_coroutine(void *args)
+{
+	struct recv_file_coroutine_args *p = (struct recv_file_coroutine_args*)args;
+	
+	if (verbose > 1)
+		rprintf(FINFO, "recv_files_coroutine starting\n");
+
+	recv_files(p->f_in,p->flist,p->local_name,p->recv_pipe[1]);
+	io_flush();
+	report(p->f_in);
+
+	write_int(p->recv_pipe[1],1);
+	close(p->recv_pipe[1]);
+	io_flush();
+
+	if (verbose > 1)
+		rprintf(FINFO, "recv_files_coroutine stopping\n");
+
+	return NULL;
+}
+#endif
+
+
 static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
 {
 #ifndef NOSHELLORSERVER
 	int pid;
 #endif
 	int status=0;
-#ifndef NOSHELLORSERVER
 	int recv_pipe[2];
+#ifndef NOSHELLORSERVER
 	int error_pipe[2];
+#else
+	struct recv_file_coroutine_args coro_args;
 #endif
 	extern int preserve_hard_links;
 	extern int delete_after;
@@ -420,7 +456,13 @@ static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
 		}
 	}
 
-#ifndef NOSHELLORSERVER
+#ifdef NOSHELLORSERVER
+	/* On systems without pipe(), create an in-memory FIFO for the recv pipe */
+	if (dos_pipe_open(recv_pipe, 64) < 0) {
+		rprintf(FERROR,"dos_pipe_open failed in do_recv\n");
+		exit_cleanup(RERR_SOCKETIO);
+	}
+#else
 	if (fd_pair(recv_pipe) < 0) {
 		rprintf(FERROR,"pipe failed in do_recv\n");
 		exit_cleanup(RERR_SOCKETIO);
@@ -430,9 +472,24 @@ static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
 		rprintf(FERROR,"error pipe failed in do_recv\n");
 		exit_cleanup(RERR_SOCKETIO);
 	}
+#endif
   
 	io_flush();
 
+#ifdef NOSHELLORSERVER
+	/* On systems without fork(), create a co-routine to interleave execution of
+	   generate_files and recv_files */
+	coro_args.f_in = f_in;
+	coro_args.flist = flist;
+	coro_args.local_name = local_name;
+	coro_args.recv_pipe[0] = recv_pipe[0];
+	coro_args.recv_pipe[1] = recv_pipe[1];
+
+	recv_files_coro = coroutine(recv_files_coroutine);
+	resume(recv_files_coro, &coro_args);
+
+	io_start_buffering(f_out);
+#else
 	if ((pid=do_fork()) == 0) {
 		close(recv_pipe[0]);
 		close(error_pipe[0]);
@@ -465,24 +522,16 @@ static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
 	io_start_buffering(f_out);
 
 	io_set_error_fd(error_pipe[0]);
+#endif
 
 	generate_files(f_out,flist,local_name,recv_pipe[0]);
 
 	read_int(recv_pipe[0]);
-	close(recv_pipe[0]);
+#ifdef NOSHELLORSERVER
+	dos_close_fd(recv_pipe[0]);
 #else
-	io_start_buffering(f_out);
-	
-	// send the checksums and ensure local permissions
-	generate_files_phase1(f_out,flist,local_name);
-	
-	// get the data
-	recv_gen_files(f_in,f_out,flist,local_name);
-	io_flush();
-	report(f_in);
-	io_flush();
+	close(recv_pipe[0]);
 #endif
-
 	if (remote_version >= 24) {
 		/* send a final goodbye message */
 		write_int(f_out, -1);
