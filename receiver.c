@@ -322,11 +322,7 @@ static int receive_data(int f_in,struct map_struct *buf,int fd,char *fname,
  * main routine for receiver process.
  *
  * Receiver process runs on the same host as the generator process. */
-#ifdef NOSHELLORSERVER
-int recv_gen_files(int f_in,int f_out,struct file_list *flist,char *local_name)
-#else
 int recv_files(int f_in,struct file_list *flist,char *local_name,int f_gen)
-#endif
 {  
 	int fd1,fd2;
 	STRUCT_STAT st;
@@ -346,6 +342,8 @@ int recv_files(int f_in,struct file_list *flist,char *local_name,int f_gen)
 	extern int orig_umask;
 	struct stats initial_stats;
 
+	coroutine_yield();
+
 	if (verbose > 2) {
 		rprintf(FINFO,"recv_files(%d) starting\n",flist->count);
 	}
@@ -360,11 +358,8 @@ int recv_files(int f_in,struct file_list *flist,char *local_name,int f_gen)
 				csum_length = SUM_LENGTH;
 				if (verbose > 2)
 					rprintf(FINFO,"recv_files phase=%d\n",phase);
-#ifdef NOSHELLORSERVER
-				generate_files_phase2(f_out,flist,local_name,i);
-#else
 				write_int(f_gen,-1);
-#endif
+				coroutine_yield();
 				continue;
 			}
 			break;
@@ -506,11 +501,8 @@ int recv_files(int f_in,struct file_list *flist,char *local_name,int f_gen)
 			} else {
 				if (verbose > 1)
 					rprintf(FINFO,"redoing %s(%d)\n",fname,i);
-#ifdef NOSHELLORSERVER
-				generate_files_phase2(f_out,flist,local_name,i);
-#else
 				write_int(f_gen,i);
-#endif
+				coroutine_yield();
 			}
 		}
 	}

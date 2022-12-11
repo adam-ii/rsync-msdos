@@ -471,11 +471,8 @@ void recv_generator(char *fname, struct file_list *flist, int i, int f_out)
 }
 
 
-#ifdef NOSHELLORSERVER
-void generate_files_phase1(int f,struct file_list *flist,char *local_name)
-#else
+
 void generate_files(int f,struct file_list *flist,char *local_name,int f_recv)
-#endif
 {
 	int i;
 	int phase=0;
@@ -525,25 +522,12 @@ void generate_files(int f,struct file_list *flist,char *local_name,int f_recv)
 
 	write_int(f,-1);
 
-#ifdef NOSHELLORSERVER
-}
-
-void generate_files_phase2(int f,struct file_list *flist,char *local_name,int i)
-{
-	int phase = 1;
-
-	if (verbose > 2)
-		rprintf(FINFO,"generate_files_phase2 synchronous i=%d\n",i);
-#endif
+	coroutine_resume(recv_files_coro);
 
 	if (remote_version >= 13) {
 		/* in newer versions of the protocol the files can cycle through
 		   the system more than once to catch initial checksum errors */
-#ifdef NOSHELLORSERVER
-		if (i != -1) {
-#else
 		for (i=read_int(f_recv); i != -1; i=read_int(f_recv)) {
-#endif
 			struct file_struct *file = flist->files[i];
 			recv_generator(local_name?local_name:f_name(file),
 				       flist,i,f);    
@@ -554,5 +538,7 @@ void generate_files_phase2(int f,struct file_list *flist,char *local_name,int i)
 			rprintf(FINFO,"generate_files phase=%d\n",phase);
 
 		write_int(f,-1);
+
+		coroutine_resume(recv_files_coro);
 	}
 }
