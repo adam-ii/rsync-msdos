@@ -230,53 +230,7 @@ int set_perms(char *fname,struct file_struct *file,STRUCT_STAT *st,
 }
 
 
-#ifdef MSDOS
-/* Restore start directory on exit or signal */
-static char* start_dir = NULL;
-static void (*old_sigint)(int);
-
-static void restore_start_dir()
-{
-	if (start_dir)
-	{
-		chdir(start_dir);
-		free(start_dir);
-		start_dir = NULL;
-	}
-}
-
-static void atexit_msdos()
-{
-	if (verbose > 3)
-		rprintf(FINFO,"atexit_msdos(): entered\n");
-
-	restore_start_dir();
-}
-
-static void sig_int_msdos(int sig)
-{
-	signal(sig, SIG_IGN);
-
-	if (verbose > 3)
-		rprintf(FINFO, "sig_int_msdos(%d): entered\n", sig);
-
-	restore_start_dir();
-
-	signal(sig, old_sigint);
-	raise(sig);
-}
-
-void signal_msdos()
-{
-	char curr_dir[MAXPATHLEN];
-	getcwd(curr_dir, sizeof(curr_dir)-1);
-	assert(start_dir == NULL);
-	start_dir = strdup(curr_dir);
-
-	old_sigint = signal(SIGINT, sig_int_msdos);
-	atexit(atexit_msdos);
-}
-#else
+#ifndef MSDOS
 void sig_int(void)
 {
 	exit_cleanup(RERR_SIGNAL);

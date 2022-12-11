@@ -193,3 +193,42 @@ int dos_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, s
 
 	return n + select_rc;
 }
+
+/* Restore start directory on exit or signal */
+static char dos_start_dir[MAXPATHLEN];
+static void (*dos_old_sigint)(int);
+
+static void dos_restore_start_dir()
+{
+	if (*dos_start_dir)
+		chdir(dos_start_dir);
+}
+
+static void dos_sigint(int sig)
+{
+	signal(sig, SIG_IGN);
+
+	if (verbose > 3)
+		rprintf(FINFO, "dos_sigint(%d): entered\n", sig);
+
+	dos_restore_start_dir();
+
+	signal(sig, dos_old_sigint);
+	raise(sig);
+}
+
+void dos_atexit()
+{
+	if (verbose > 3)
+		rprintf(FINFO,"dos_atexit(): entered\n");
+
+	dos_restore_start_dir();
+}
+
+void dos_signal()
+{
+	getcwd(dos_start_dir, sizeof(dos_start_dir)-1);
+
+	dos_old_sigint = signal(SIGINT, dos_sigint);
+	atexit(dos_atexit);
+}

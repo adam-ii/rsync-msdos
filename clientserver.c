@@ -85,7 +85,7 @@ int start_socket_client(char *host, char *path, int argc, char *argv[])
 	
 #ifdef MSDOS
 	/* Install signal handlers after Watt-32 has hooked SIGINT. */
-	signal_msdos();
+	dos_signal();
 #endif
 
 	ret = start_inband_exchange(user, path, fd, fd, argc);
