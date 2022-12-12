@@ -68,7 +68,7 @@
 #define RSYNC_PORT 873
 
 #define SPARSE_WRITE_SIZE (1024)
-#if M_I86 // SIZEOF_INT == 2
+#if M_I86 /* SIZEOF_INT == 2 is not available until #include config.h */
 /* much of the code works with int, largest power of 2 is 16k
  * 4 chunks are held in a map so chunk size limited to 4k. */
 #define WRITE_SIZE (4*1024)
@@ -99,7 +99,7 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
  * controls parameter munging for HP/UX, etc. */
 
 #ifdef MSDOS
-/* Provided by Watt-32, but is predicated on AC_TRY_RUN in configure.in */
+/* Provided by Watt-32, but can't be detected by configure when cross-compiling */
 #define HAVE_GETTIMEOFDAY_TZ 1
 #endif
 

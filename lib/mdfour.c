@@ -39,16 +39,6 @@ static struct mdfour *m;
 #define ROUND2(a,b,c,d,k,s) a = lshift((a + G(b,c,d) + M[k] + 0x5A827999)&MASK32,s)
 #define ROUND3(a,b,c,d,k,s) a = lshift((a + H(b,c,d) + M[k] + 0x6ED9EBA1)&MASK32,s)
 
-#ifdef TEST_MDFOUR
-void	displayInts(uint32 *pI)
-{
-	printf("%08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx\n",
-		pI[0], pI[1], pI[2], pI[3], pI[4], pI[5], pI[6], pI[7]);
-	printf("%08lx %08lx %08lx %08lx %08lx %08lx %08lx %08lx\n",
-		pI[8], pI[9], pI[10], pI[11], pI[12], pI[13], pI[14], pI[15]);
-}
-#endif
-
 /* this applies md4 to 64 byte chunks */
 static void mdfour64(uint32 *M)
 {
@@ -104,9 +94,8 @@ static void copy64(uint32 *M, unsigned char *in)
 		M[i] = (in[i*4+3]<<24) | (in[i*4+2]<<16) |
 			(in[i*4+1]<<8) | (in[i*4+0]<<0);
 #else
-// borland c makes these signed as it shifts and or's
-// better to take advantage of the little endian anyway
-	memmove((unsigned char *)M, in, 64);
+	/* take advantage of little endian */
+	memmove(M, in, 64);
 #endif
 }
 
@@ -165,25 +154,13 @@ void mdfour_update(struct mdfour *md, unsigned char *in, int n)
 
 	while (n >= 64) {
 		copy64(M, in);
-#ifdef TEST_MDFOUR
- 	displayInts(M);
-#endif
 		mdfour64(M);
-#ifdef TEST_MDFOUR
- 	displayInts(M);
-#endif
 		in += 64;
 		n -= 64;
 		m->totalN += 64;
 	}
 
-#ifdef TEST_MDFOUR
- 	displayInts(M);
-#endif
 	if (n) mdfour_tail(in, n);
-#ifdef TEST_MDFOUR
- 	displayInts(M);
-#endif
 }
 
 
