@@ -289,8 +289,10 @@ void usage(enum logcode F)
   rprintf(F,"     --log-format=FORMAT     log file transfers using specified format\n");  
   rprintf(F,"     --password-file=FILE    get password from FILE\n");
   rprintf(F,"     --bwlimit=KBPS          limit I/O bandwidth, KBytes per second\n");
+#ifndef MSDOS
   rprintf(F,"     --write-batch=PREFIX    write batch fileset starting with PREFIX\n");
   rprintf(F,"     --read-batch=PREFIX     read batch fileset starting with PREFIX\n");
+#endif
   rprintf(F," -h, --help                  show this help screen\n");
 #ifdef INET6
   rprintf(F," -4                          prefer IPv4\n");
@@ -408,9 +410,9 @@ static struct poptOption long_options[] = {
   {"backup-dir",       0,  POPT_ARG_STRING, &backup_dir , 0, 0, 0 },
 #ifndef MSDOS
   {"hard-links",      'H', POPT_ARG_NONE,   &preserve_hard_links , 0, 0, 0 },
-#endif
   {"read-batch",       0,  POPT_ARG_STRING, &batch_prefix, OPT_READ_BATCH, 0, 0 },
   {"write-batch",      0,  POPT_ARG_STRING, &batch_prefix, OPT_WRITE_BATCH, 0, 0 },
+#endif
 #ifdef INET6
   {0,		      '4', POPT_ARG_VAL,    &default_af_hint,   AF_INET , 0, 0 },
   {0,		      '6', POPT_ARG_VAL,    &default_af_hint,   AF_INET6 , 0, 0 },

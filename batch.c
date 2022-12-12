@@ -12,10 +12,17 @@ extern char *batch_prefix;
 
 struct file_list *batch_flist;
 
+#ifdef MSDOS
+static char rsync_flist_file[] = ".r_f";
+static char rsync_csums_file[] = ".r_c";
+static char rsync_delta_file[] = ".r_d";
+static char rsync_argvs_file[] = ".r_a";
+#else
 static char rsync_flist_file[] = ".rsync_flist";
 static char rsync_csums_file[] = ".rsync_csums";
 static char rsync_delta_file[] = ".rsync_delta";
 static char rsync_argvs_file[] = ".rsync_argvs";
+#endif
 
 static int fdb;
 static int fdb_delta;
@@ -157,7 +164,11 @@ void write_batch_argvs_file(int argc, char *argv[])
 			strlcat(buff, batch_prefix, sizeof(buff));
 		} else
 		if (i == argc - 1) {
+#ifdef MSDOS
+		    snprintf(buff2, sizeof(buff2), "%s", argv[i]);
+#else
 		    snprintf(buff2, sizeof(buff2), "${1:-%s}", argv[i]);
+#endif
 		    strlcat(buff, buff2, sizeof(buff));
 		}
 		else {
