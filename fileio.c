@@ -69,19 +69,22 @@ static int write_sparse(int f,char *buf,size_t len)
 	return len;
 }
 
-
-
+/*
+ * write_file does not allow incomplete writes.  It loops internally
+ * until len bytes are written or errno is set.
+ */
 int write_file(int f,char *buf,size_t len)
 {
 	int ret = 0;
 
-	if (!sparse_files) {
-		return write(f,buf,len);
-	}
-
 	while (len>0) {
-		int len1 = MIN(len, SPARSE_WRITE_SIZE);
-		int r1 = write_sparse(f, buf, len1);
+		int r1;
+		if (sparse_files) {
+			int len1 = MIN(len, SPARSE_WRITE_SIZE);
+			r1 = write_sparse(f, buf, len1);
+		} else {
+			r1 = write(f, buf, len);
+		}
 		if (r1 <= 0) {
 			if (ret > 0) return ret;
 			return r1;
@@ -102,7 +105,7 @@ int write_file(int f,char *buf,size_t len)
 struct map_struct *map_file(int fd,OFF_T len)
 {
 	struct map_struct *map;
-	map = (struct map_struct *)malloc(sizeof(*map));
+	map = new(struct map_struct);
 	if (!map) out_of_memory("map_file");
 
 	map->fd = fd;
@@ -112,6 +115,7 @@ struct map_struct *map_file(int fd,OFF_T len)
 	map->p_offset = 0;
 	map->p_fd_offset = 0;
 	map->p_len = 0;
+	map->status = 0;
 
 	return map;
 }
@@ -160,8 +164,7 @@ char *map_ptr(struct map_struct *map,OFF_T offset,int len)
 
 	/* make sure we have allocated enough memory for the window */
 	if (window_size > map->p_size) {
-		verify_int_numeric_cast(window_size); /* for Realloc(int) */
-		map->p = (char *)Realloc(map->p, window_size);
+		map->p = realloc_array(map->p, char, window_size);
 		if (!map->p) out_of_memory("map_ptr");
 		map->p_size = window_size;
 	}
@@ -193,7 +196,11 @@ char *map_ptr(struct map_struct *map,OFF_T offset,int len)
 		}
 
 		if ((nread=read(map->fd,map->p + read_offset,read_size)) != read_size) {
-			if (nread < 0) nread = 0;
+			if (nread < 0) {
+				nread = 0;
+				if (!map->status)
+					map->status = errno;
+			}
 			/* the best we can do is zero the buffer - the file
 			   has changed mid transfer! */
 			memset(map->p+read_offset+nread, 0, read_size - nread);
@@ -208,13 +215,18 @@ char *map_ptr(struct map_struct *map,OFF_T offset,int len)
 }
 
 
-void unmap_file(struct map_struct *map)
+int unmap_file(struct map_struct *map)
 {
+	int	ret;
+
 	if (map->p) {
 		free(map->p);
 		map->p = NULL;
 	}
+	ret = map->status;
 	memset(map, 0, sizeof(*map));
 	free(map);
+
+	return ret;
 }
 

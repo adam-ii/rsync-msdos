@@ -377,6 +377,15 @@ int is_a_socket(int fd)
 }
 
 
+static RETSIGTYPE sigchld_handler(UNUSED(int val))
+{
+	signal(SIGCHLD, sigchld_handler);
+#ifdef WNOHANG
+	while (waitpid(-1, NULL, WNOHANG) > 0) {}
+#endif
+}
+
+
 void start_accept_loop(int port, int (*fn)(int, int))
 {
 	int s;
@@ -422,14 +431,7 @@ void start_accept_loop(int port, int (*fn)(int, int))
 
 		if (fd == -1) continue;
 
-		signal(SIGCHLD, SIG_IGN);
-
-		/* we shouldn't have any children left hanging around
-		   but I have had reports that on Digital Unix zombies
-		   are produced, so this ensures that they are reaped */
-#ifdef WNOHANG
-                while (waitpid(-1, NULL, WNOHANG) > 0);
-#endif
+		signal(SIGCHLD, sigchld_handler);
 
 		if ((pid = fork()) == 0) {
 			int ret;

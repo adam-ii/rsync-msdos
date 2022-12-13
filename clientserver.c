@@ -1,18 +1,18 @@
 /* -*- c-file-style: "linux"; -*-
- * 
+ *
  * Copyright (C) 1998-2001 by Andrew Tridgell <tridge@samba.org>
  * Copyright (C) 2001-2002 by Martin Pool <mbp@samba.org>
- * 
+ *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation; either version 2 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
@@ -33,6 +33,11 @@ extern int verbose;
 extern int rsync_port;
 char *auth_user;
 extern int sanitize_paths;
+extern int filesfrom_fd;
+extern int remote_protocol;
+extern int protocol_version;
+extern struct exclude_struct **server_exclude_list;
+extern char *exclude_path_prefix;
 
 /**
  * Run a client connected to an rsyncd.  The alternative to this
@@ -54,10 +59,10 @@ int start_socket_client(char *host, char *path, int argc, char *argv[])
 	char *p, *user=NULL;
 	extern char *bind_address;
 	extern int default_af_hint;
-       
+
 	/* this is redundant with code in start_inband_exchange(), but
-	   this short-circuits a problem before we open a socket, and 
-	   the extra check won't hurt */
+	 * this short-circuits a problem before we open a socket, and
+	 * the extra check won't hurt */
 	if (*path == '/') {
 		rprintf(FERROR,"ERROR: The remote path must start with a module name not a /\n");
 		return -1;
@@ -77,8 +82,8 @@ int start_socket_client(char *host, char *path, int argc, char *argv[])
 		rprintf(FINFO, "opening tcp connection to %s port %d\n",
 			host, rsync_port);
 	}
-	fd = open_socket_out_wrapped (host, rsync_port, bind_address,
-				      default_af_hint);
+	fd = open_socket_out_wrapped(host, rsync_port, bind_address,
+				     default_af_hint);
 	if (fd == -1) {
 		exit_cleanup(RERR_SOCKETIO);
 	}
@@ -100,7 +105,6 @@ int start_inband_exchange(char *user, char *path, int f_in, int f_out, int argc)
 	int sargc = 0;
 	char line[MAXPATHLEN];
 	char *p;
-	extern int remote_version;
 	extern int kludge_around_eof;
 	extern int am_sender;
 	extern int daemon_over_rsh;
@@ -117,15 +121,15 @@ int start_inband_exchange(char *user, char *path, int f_in, int f_out, int argc)
 	if (!user) user = getenv("USER");
 	if (!user) user = getenv("LOGNAME");
 
-	/* set daemon_over_rsh to false since we need to build the 
-	   true set of args passed through the rsh/ssh connection; 
-	   this is a no-op for direct-socket-connection mode */
+	/* set daemon_over_rsh to false since we need to build the
+	 * true set of args passed through the rsh/ssh connection;
+	 * this is a no-op for direct-socket-connection mode */
 	daemon_over_rsh = 0;
 	server_options(sargs, &sargc);
 
 	sargs[sargc++] = ".";
 
-	if (path && *path) 
+	if (path && *path)
 		sargs[sargc++] = path;
 
 	sargs[sargc] = NULL;
@@ -137,12 +141,14 @@ int start_inband_exchange(char *user, char *path, int f_in, int f_out, int argc)
 		return -1;
 	}
 
-	if (sscanf(line,"@RSYNCD: %d", &remote_version) != 1) {
+	if (sscanf(line,"@RSYNCD: %d", &remote_protocol) != 1) {
 		/* note that read_line strips of \n or \r */
 		rprintf(FERROR, "rsync: server sent \"%s\" rather than greeting\n",
 			line);
 		return -1;
 	}
+	if (protocol_version > remote_protocol)
+		protocol_version = remote_protocol;
 
 	p = strchr(path,'/');
 	if (p) *p = 0;
@@ -151,7 +157,7 @@ int start_inband_exchange(char *user, char *path, int f_in, int f_out, int argc)
 
 	/* Old servers may just drop the connection here,
 	 rather than sending a proper EXIT command.  Yuck. */
-	kludge_around_eof = list_only && (remote_version < 25);
+	kludge_around_eof = list_only && (protocol_version < 25);
 
 	while (1) {
 		if (!read_line(f_in, line, sizeof(line)-1)) {
@@ -190,8 +196,8 @@ int start_inband_exchange(char *user, char *path, int f_in, int f_out, int argc)
 	}
 	io_printf(f_out, "\n");
 
-	if (remote_version < 23) {
-		if (remote_version == 22 || (remote_version > 17 && !am_sender))
+	if (protocol_version < 23) {
+		if (protocol_version == 22 || (protocol_version > 17 && !am_sender))
 			io_start_multiplex_in(f_in);
 	}
 
@@ -220,7 +226,6 @@ static int rsync_module(int f_in, int f_out, int i)
 	extern int am_sender;
 	extern int am_server;
 	extern int am_daemon;
-	extern int remote_version;
 	extern int am_root;
 
 	if (!allow_access(addr, host, lp_hosts_allow(i), lp_hosts_deny(i))) {
@@ -245,19 +250,20 @@ static int rsync_module(int f_in, int f_out, int i)
 		} else {
 			rprintf(FERROR,"max connections (%d) reached\n",
 				lp_max_connections(i));
-			io_printf(f_out, "@ERROR: max connections (%d) reached - try again later\n", lp_max_connections(i));
+			io_printf(f_out, "@ERROR: max connections (%d) reached - try again later\n",
+				lp_max_connections(i));
 		}
 		return -1;
 	}
 
-	
+
 	auth_user = auth_server(f_in, f_out, i, addr, "@RSYNCD: AUTHREQD ");
 
 	if (!auth_user) {
 		rprintf(FERROR,"auth failed on module %s from %s (%s)\n",
 			name, host, addr);
 		io_printf(f_out, "@ERROR: auth failed on module %s\n", name);
-		return -1;		
+		return -1;
 	}
 
 	module_id = i;
@@ -271,7 +277,7 @@ static int rsync_module(int f_in, int f_out, int i)
 				rprintf(FERROR,"Invalid uid %s\n", p);
 				io_printf(f_out, "@ERROR: invalid uid %s\n", p);
 				return -1;
-			} 
+			}
 			uid = atoi(p);
 		}
 
@@ -281,29 +287,35 @@ static int rsync_module(int f_in, int f_out, int i)
 				rprintf(FERROR,"Invalid gid %s\n", p);
 				io_printf(f_out, "@ERROR: invalid gid %s\n", p);
 				return -1;
-			} 
+			}
 			gid = atoi(p);
 		}
 	}
-        
-        /* TODO: If we're not root, but the configuration requests
-         * that we change to some uid other than the current one, then
-         * log a warning. */
 
-        /* TODO: Perhaps take a list of gids, and make them into the
-         * supplementary groups. */
+	/* TODO: If we're not root, but the configuration requests
+	 * that we change to some uid other than the current one, then
+	 * log a warning. */
+
+	/* TODO: Perhaps take a list of gids, and make them into the
+	 * supplementary groups. */
+
+	exclude_path_prefix = use_chroot? "" : lp_path(i);
+	if (*exclude_path_prefix == '/' && !exclude_path_prefix[1])
+		exclude_path_prefix = "";
 
 	p = lp_include_from(i);
-	add_exclude_file(p, 1, 1);
+	add_exclude_file(&server_exclude_list, p, MISSING_FATAL, ADD_INCLUDE);
 
 	p = lp_include(i);
-	add_include_line(p);
+	add_exclude_line(&server_exclude_list, p, ADD_INCLUDE);
 
 	p = lp_exclude_from(i);
-	add_exclude_file(p, 1, 0);
+	add_exclude_file(&server_exclude_list, p, MISSING_FATAL, ADD_EXCLUDE);
 
 	p = lp_exclude(i);
-	add_exclude_line(p);
+	add_exclude_line(&server_exclude_list, p, ADD_EXCLUDE);
+
+	exclude_path_prefix = NULL;
 
 	log_init();
 
@@ -327,7 +339,7 @@ static int rsync_module(int f_in, int f_out, int i)
 		}
 
 		if (!push_dir("/", 0)) {
-                        rsyserr(FERROR, errno, "chdir %s failed\n", lp_path(i));
+			rsyserr(FERROR, errno, "chdir %s failed\n", lp_path(i));
 			io_printf(f_out, "@ERROR: chdir failed\n");
 			return -1;
 		}
@@ -342,16 +354,6 @@ static int rsync_module(int f_in, int f_out, int i)
 	}
 
 	if (am_root) {
-#ifdef HAVE_SETGROUPS
-		/* Get rid of any supplementary groups this process
-		 * might have inheristed. */
-		if (setgroups(0, NULL)) {
-			rsyserr(FERROR, errno, "setgroups failed");
-			io_printf(f_out, "@ERROR: setgroups failed\n");
-			return -1;
-		}
-#endif
-
 		/* XXXX: You could argue that if the daemon is started
 		 * by a non-root user and they explicitly specify a
 		 * gid, then we should try to change to that gid --
@@ -367,6 +369,15 @@ static int rsync_module(int f_in, int f_out, int i)
 			io_printf(f_out, "@ERROR: setgid failed\n");
 			return -1;
 		}
+#ifdef HAVE_SETGROUPS
+		/* Get rid of any supplementary groups this process
+		 * might have inheristed. */
+		if (setgroups(1, &gid)) {
+			rsyserr(FERROR, errno, "setgroups failed");
+			io_printf(f_out, "@ERROR: setgroups failed\n");
+			return -1;
+		}
+#endif
 
 		if (setuid(uid)) {
 			rsyserr(FERROR, errno, "setuid %d failed", (int) uid);
@@ -427,8 +438,11 @@ static int rsync_module(int f_in, int f_out, int i)
 		}
 	}
 
-        argp = argv;
+	argp = argv;
 	ret = parse_arguments(&argc, (const char ***) &argp, 0);
+
+	if (filesfrom_fd == 0)
+		filesfrom_fd = f_in;
 
 	if (request) {
 		if (*auth_user) {
@@ -448,22 +462,22 @@ static int rsync_module(int f_in, int f_out, int i)
 	if (verbose > 1) verbose = 1;
 #endif
 
-	if (remote_version < 23) {
-		if (remote_version == 22 || (remote_version > 17 && am_sender))
+	if (protocol_version < 23) {
+		if (protocol_version == 22 || (protocol_version > 17 && am_sender))
 			io_start_multiplex_out(f_out);
 	}
-        
-        /* For later protocol versions, we don't start multiplexing
-         * until we've configured nonblocking in start_server.  That
-         * means we're in a sticky situation now: there's no way to
-         * convey errors to the client. */
 
-        /* FIXME: Hold off on reporting option processing errors until
-         * we've set up nonblocking and multiplexed IO and can get the
-         * message back to them. */
+	/* For later protocol versions, we don't start multiplexing
+	 * until we've configured nonblocking in start_server.  That
+	 * means we're in a sticky situation now: there's no way to
+	 * convey errors to the client. */
+
+	/* FIXME: Hold off on reporting option processing errors until
+	 * we've set up nonblocking and multiplexed IO and can get the
+	 * message back to them. */
 	if (!ret) {
-                option_error();
-                exit_cleanup(RERR_UNSUPPORTED);
+		option_error();
+		exit_cleanup(RERR_UNSUPPORTED);
 	}
 
 	if (lp_timeout(i)) {
@@ -482,13 +496,12 @@ static void send_listing(int fd)
 {
 	int n = lp_numservices();
 	int i;
-	extern int remote_version;
 
 	for (i=0;i<n;i++)
 		if (lp_list(i))
-		    io_printf(fd, "%-15s\t%s\n", lp_name(i), lp_comment(i));
+			io_printf(fd, "%-15s\t%s\n", lp_name(i), lp_comment(i));
 
-	if (remote_version >= 25)
+	if (protocol_version >= 25)
 		io_printf(fd,"@RSYNCD: EXIT\n");
 }
 
@@ -501,7 +514,6 @@ int start_daemon(int f_in, int f_out)
 	char *motd;
 	int i = -1;
 	extern char *config_file;
-	extern int remote_version;
 	extern int am_server;
 
 	if (!lp_load(config_file, 0)) {
@@ -536,10 +548,12 @@ int start_daemon(int f_in, int f_out)
 		return -1;
 	}
 
-	if (sscanf(line,"@RSYNCD: %d", &remote_version) != 1) {
+	if (sscanf(line,"@RSYNCD: %d", &remote_protocol) != 1) {
 		io_printf(f_out, "@ERROR: protocol startup error\n");
 		return -1;
-	}	
+	}
+	if (protocol_version > remote_protocol)
+		protocol_version = remote_protocol;
 
 	while (i == -1) {
 		line[0] = 0;
@@ -550,7 +564,7 @@ int start_daemon(int f_in, int f_out)
 		if (!*line || strcmp(line,"#list")==0) {
 			send_listing(f_out);
 			return -1;
-		} 
+		}
 
 		if (*line == '#') {
 			/* it's some sort of command that I don't understand */
@@ -580,10 +594,10 @@ int daemon_main(void)
 		int i;
 
 		/* we are running via inetd - close off stdout and
-		   stderr so that library functions (and getopt) don't
-		   try to use them. Redirect them to /dev/null */
+		 * stderr so that library functions (and getopt) don't
+		 * try to use them. Redirect them to /dev/null */
 		for (i=1;i<3;i++) {
-			close(i); 
+			close(i);
 			open("/dev/null", O_RDWR);
 		}
 
@@ -591,7 +605,7 @@ int daemon_main(void)
 	}
 
 	if (!no_detach)
-	    become_daemon();
+		become_daemon();
 
 	if (!lp_load(config_file, 1)) {
 		exit_cleanup(RERR_SYNTAX);
@@ -600,11 +614,10 @@ int daemon_main(void)
 	log_init();
 
 	rprintf(FINFO, "rsyncd version %s starting, listening on port %d\n",
-		RSYNC_VERSION,
-                rsync_port);
-        /* TODO: If listening on a particular address, then show that
-         * address too.  In fact, why not just do inet_ntop on the
-         * local address??? */
+		RSYNC_VERSION, rsync_port);
+	/* TODO: If listening on a particular address, then show that
+	 * address too.  In fact, why not just do inet_ntop on the
+	 * local address??? */
 
 	if (((pid_file = lp_pid_file()) != NULL) && (*pid_file != '\0')) {
 		char pidbuf[16];
@@ -613,9 +626,9 @@ int daemon_main(void)
 		cleanup_set_pid(pid);
 		if ((fd = do_open(lp_pid_file(), O_WRONLY|O_CREAT|O_TRUNC,
 					0666 & ~orig_umask)) == -1) {
-		    cleanup_set_pid(0);
-		    rsyserr(FLOG, errno, "failed to create pid file %s", pid_file);
-		    exit_cleanup(RERR_FILEIO);
+			cleanup_set_pid(0);
+			rsyserr(FLOG, errno, "failed to create pid file %s", pid_file);
+			exit_cleanup(RERR_FILEIO);
 		}
 		snprintf(pidbuf, sizeof(pidbuf), "%d\n", pid);
 		write(fd, pidbuf, strlen(pidbuf));
@@ -626,4 +639,3 @@ int daemon_main(void)
 	return -1;
 }
 #endif
-
