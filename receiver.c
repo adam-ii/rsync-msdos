@@ -205,11 +205,19 @@ static int get_tmpname(char *fnametmp, char *fname)
 	if (tmpdir) {
 		strlcpy(fnametmp, tmpdir, MAXPATHLEN - 2);
 		length = strlen(fnametmp);
+#ifdef MSDOS
+		fnametmp[length++] = '\\';
+#else
 		fnametmp[length++] = '/';
+#endif
 		fnametmp[length] = '\0';	/* always NULL terminated */
 	}
 
+#ifdef MSDOS
+	if ((f = strrchr(fname, '\\')) != NULL) {
+#else
 	if ((f = strrchr(fname, '/')) != NULL) {
+#endif
 		++f;
 		if (!tmpdir) {
 			length = f - fname;
@@ -219,6 +227,10 @@ static int get_tmpname(char *fnametmp, char *fname)
 	} else {
 		f = fname;
 	}
+#ifdef MSDOS
+	fnametmp[length] = '\0';		/* always NULL terminated */
+	strcat(fnametmp + length, "_RXXXXXX");
+#else
 	fnametmp[length++] = '.';
 	fnametmp[length] = '\0';		/* always NULL terminated */
 
@@ -232,6 +244,7 @@ static int get_tmpname(char *fnametmp, char *fname)
 
 	strlcpy(fnametmp + length, f, maxname);
 	strcat(fnametmp + length, ".XXXXXX");
+#endif
 
 	return 1;
 }
