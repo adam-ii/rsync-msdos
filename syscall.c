@@ -58,14 +58,16 @@ int do_link(char *fname1, char *fname2)
 }
 #endif
 
-#ifndef MSDOS
 int do_lchown(const char *path, uid_t owner, gid_t group)
 {
+#ifndef MSDOS
 	if (dry_run) return 0;
 	CHECK_RO
 	return lchown(path, owner, group);
-}
+#else
+	return 0;
 #endif
+}
 
 #if HAVE_MKNOD
 int do_mknod(char *pathname, mode_t mode, dev_t dev)
@@ -141,7 +143,7 @@ int do_mkdir(char *fname, mode_t mode)
 		return 0;
 	CHECK_RO;
 	trim_trailing_slashes(fname);	
-#if defined(MSDOS)
+#ifdef MSDOS
 	return mkdir(fname);
 #else
 	return mkdir(fname, mode);
@@ -170,7 +172,7 @@ int do_mkstemp(char *template, mode_t perms)
 	if (!_mktemp(template)) return -1;
 #else
 	if (!mktemp(template)) return -1;
- #endif
+#endif
 	return do_open(template, O_RDWR|O_EXCL|O_CREAT, perms);
 }
 
