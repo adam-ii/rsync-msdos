@@ -314,6 +314,7 @@ static void flist_expand(struct file_list *flist)
 			flist->malloced *= 2;
 
 		new_bytes = sizeof(flist->files[0]) * flist->malloced;
+		verify_uint_mul(sizeof(flist->files[0]), flist->malloced); /* for malloc(size_t) */
 		
 		if (flist->files)
 			new_ptr = realloc(flist->files, new_bytes);
@@ -1057,6 +1058,7 @@ struct file_list *recv_file_list(int f)
 
 	flist->count = 0;
 	flist->malloced = 1000;
+	verify_uint_mul(sizeof(flist->files[0]), flist->malloced); /* for malloc(size_t) */
 	flist->files =
 	    (struct file_struct **) malloc(sizeof(flist->files[0]) *
 					   flist->malloced);

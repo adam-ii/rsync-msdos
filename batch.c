@@ -202,6 +202,7 @@ struct file_list *create_flist_from_batch(void)
 	}
 	batch_flist->count = 0;
 	batch_flist->malloced = 1000;
+	verify_uint_mul(sizeof(batch_flist->files[0]), batch_flist->malloced); /* for malloc(size_t) */
 	batch_flist->files =
 	    (struct file_struct **) malloc(sizeof(batch_flist->files[0]) *
 					   batch_flist->malloced);
@@ -218,6 +219,7 @@ struct file_list *create_flist_from_batch(void)
 				batch_flist->malloced += 1000;
 			else
 				batch_flist->malloced *= 2;
+			verify_uint_mul(sizeof(batch_flist->files[0]), batch_flist->malloced); /* for realloc(size_t) */
 			batch_flist->files =
 			    (struct file_struct **) realloc(batch_flist->
 							    files,

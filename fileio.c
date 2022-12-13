@@ -121,7 +121,11 @@ char *map_ptr(struct map_struct *map,OFF_T offset,int len)
 {
 	int nread;
 	OFF_T window_start, read_start;
+#if SIZEOF_INT == 2	
+	int32 window_size, read_size, read_offset;
+#else
 	int window_size, read_size, read_offset;
+#endif
 
 	if (len == 0) {
 		return NULL;
@@ -156,6 +160,7 @@ char *map_ptr(struct map_struct *map,OFF_T offset,int len)
 
 	/* make sure we have allocated enough memory for the window */
 	if (window_size > map->p_size) {
+		verify_int_numeric_cast(window_size); /* for Realloc(int) */
 		map->p = (char *)Realloc(map->p, window_size);
 		if (!map->p) out_of_memory("map_ptr");
 		map->p_size = window_size;

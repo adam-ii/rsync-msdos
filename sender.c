@@ -61,6 +61,7 @@ static struct sum_struct *receive_sums(int f)
 	if (s->count == 0) 
 		return(s);
 
+	verify_uint_mul(sizeof(s->sums[0]), s->count); /* for malloc(size_t) */
 	s->sums = (struct sum_buf *)malloc(sizeof(s->sums[0])*s->count);
 	if (!s->sums) out_of_memory("receive_sums");
 

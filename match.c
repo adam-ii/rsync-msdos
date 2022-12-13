@@ -77,9 +77,11 @@ static void build_hash_table(struct sum_struct *s)
 {
   int i;
 
+  verify_uint_mul(sizeof(tag_table[0]), TABLESIZE); /* for malloc(size_t) */
   if (!tag_table)
     tag_table = (int *)malloc(sizeof(tag_table[0])*TABLESIZE);
 
+  verify_uint_mul(sizeof(targets[0]), s->count); /* for malloc(size_t) */
   targets = (struct target *)malloc(sizeof(targets[0])*s->count);
   if (!tag_table || !targets) 
     out_of_memory("build_hash_table");

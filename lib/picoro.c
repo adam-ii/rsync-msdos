@@ -159,7 +159,7 @@ void coroutine_main(void *ret) {
  */
 void coroutine_start(void) {
 	char stack[STACK_SIZE];
-	coroutine_main(stack, stack);
+	coroutine_main(stack);
 }
 
 /* eof */

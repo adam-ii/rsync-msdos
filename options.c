@@ -794,10 +794,6 @@ void server_options(char **args,int *argc)
 	if (x != 1) args[ac++] = argstr;
 
 	if (block_size != BLOCK_SIZE) {
-#if SIZEOF_INT == 2
-		if (block_size > CHUNK_SIZE/2)
-			block_size = CHUNK_SIZE/2;
-#endif
 		snprintf(bsize,sizeof(bsize),"-B%d",block_size);
 		args[ac++] = bsize;
 	}    

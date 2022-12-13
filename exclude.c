@@ -197,6 +197,8 @@ void add_exclude_list(const char *pattern, struct exclude_struct ***list, int in
 		return;
 	}
 
+	verify_int_mul(sizeof(struct exclude_struct *), (len+2)); /* for Realloc(int) */
+
 	*list = (struct exclude_struct **)Realloc(*list,sizeof(struct exclude_struct *)*(len+2));
 	
 	if (!*list || !((*list)[len] = make_exclude(pattern, include)))

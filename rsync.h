@@ -666,6 +666,25 @@ extern coro recv_files_coro;
 #define coroutine_resume(c) {}
 #endif
 
+#if SIZEOF_INT == 2
+/* Verify that a number will fit into a 16-bit integer */ 
+#define verify_int_numeric_cast(i) \
+	{ if ((int32)i > 0x7FFF) { rprintf(FERROR, "int16_t overflow: %ld > %d\n", (int32)i, 0x7FFF); exit_cleanup(RERR_UNSUPPORTED); } }
+#define verify_uint_numeric_cast(i) \
+	{ if ((uint32)i > 0xFFFF) { rprintf(FERROR, "uint16_t overflow: %ld > %u\n", (int32)i, 0xFFFF); exit_cleanup(RERR_UNSUPPORTED); } }
+
+/* Verify that the result of multiplying two numbers will fit into a 16-bit integer */ 
+#define verify_int_mul(a, b) \
+	{ if ((int32)a * (int32)b > 0x7FFF) { rprintf(FERROR, "int16_t overflow: %d*%d=%ld > %d\n", a, b, (int32)a * (int32)b, 0x7FFF); exit_cleanup(RERR_UNSUPPORTED); } }
+#define verify_uint_mul(a, b) \
+	{ if ((uint32)a * (uint32)b > 0xFFFF) { rprintf(FERROR, "uint16_t overflow: %u*%u=%lu > %u\n", a, b, (uint32)a * (uint32)b, 0xFFFF); exit_cleanup(RERR_UNSUPPORTED); } }
+#else
+#define verify_int_numeric_cast(i) {}
+#define verify_uint_numeric_cast(i) {}
+#define verify_int_mul(a, b) {}
+#define verify_uint_mul(a, b) {}
+#endif
+
 #ifdef MSDOS
 inline int getpid() { return 0; }
 inline int getuid() { return 0; }

@@ -99,6 +99,20 @@ static int adapt_block_size(struct file_struct *file, int bsize)
 {
 #if SIZEOF_INT == 2
 	int32 ret;
+
+	/* File checksums sums need to fit into a single malloc()-ed block, allowing for some heap alloc overhead */
+	uint32 max_malloc = 65536L - 64L;
+	uint32 max_sum_bufs = max_malloc / sizeof(struct sum_buf);
+	uint32 sum_bufs = (file->length + sizeof(struct sum_buf) - 1) / (uint32)sizeof(struct sum_buf);
+
+	if (sum_bufs > max_sum_bufs) {
+		uint32 block_size = file->length / max_sum_bufs;
+		verify_int_numeric_cast(block_size); /* */
+		bsize = (int)block_size;
+
+		if (verbose > 2)
+			rprintf(FINFO, "block size increased to %d for file length %lu\n", bsize, file->length);
+	}	
 #else
 	int ret;
 #endif

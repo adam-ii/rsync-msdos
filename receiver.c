@@ -67,6 +67,7 @@ static void add_delete_entry(struct file_struct *file)
 {
 	if (dlist_len == dlist_alloc_len) {
 		dlist_alloc_len += 1024;
+		verify_int_mul(sizeof(delete_list[0]), dlist_alloc_len); /* for Realloc(int) */
 		delete_list = (struct delete_list *)Realloc(delete_list, sizeof(delete_list[0])*dlist_alloc_len);
 		if (!delete_list) out_of_memory("add_delete_entry");
 	}
