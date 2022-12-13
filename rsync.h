@@ -310,7 +310,11 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 #define uint64 unsigned long long
 #else
 /* As long as it gets... */
+#if defined(__WATCOMC__)
+#define uint64 off_t
+#else
 #define uint64 unsigned off_t
+#endif
 #endif
 
 /* Starting from protocol version 26, we always use 64-bit
