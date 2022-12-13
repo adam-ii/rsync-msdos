@@ -10,6 +10,15 @@
 
 #include "picoro.h"
 
+#if defined(MSDOS)
+#if defined(M_I86)
+#define STACK_SIZE (4*1024)
+#else
+#define STACK_SIZE (24*1024)
+#endif
+#else
+#define STACK_SIZE (32*1024)
+#endif
 /*
  * Each coroutine has a jmp_buf to hold its context when suspended.
  *
@@ -149,8 +158,8 @@ void coroutine_main(void *ret) {
  * initial stack frame for the next coroutine.
  */
 void coroutine_start(void) {
-	char stack[4 * 1024];
-	coroutine_main(stack);
+	char stack[STACK_SIZE];
+	coroutine_main(stack, stack);
 }
 
 /* eof */

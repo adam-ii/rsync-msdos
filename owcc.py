@@ -38,7 +38,7 @@ TARGET_SYSTEMS = [
         model='f',
         wcc='wcc386',
         wcl='wcl386',
-        stack_size=32*1024,
+        stack_size=64*1024,
     ),
 ]
 
