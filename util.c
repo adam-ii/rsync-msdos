@@ -1038,7 +1038,11 @@ int _Insure_trap_error(int a1, int a2, int a3, int a4, int a5, int a6)
 #endif
 
 
+#if defined(__WATCOMC__) && defined(MSDOS) && defined(M_I86)
+#define MALLOC_MAX (unsigned long)0xFFE0 /* Maximum amount Watcom can fmalloc */
+#else
 #define MALLOC_MAX 0x40000000
+#endif
 
 void *_new_array(unsigned int size, unsigned long num)
 {
