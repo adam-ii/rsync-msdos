@@ -888,6 +888,12 @@ static void send_directory(int f, struct file_list *flist, char *dir)
 		strlcpy(p, dname, MAXPATHLEN - l);
 		send_file_name(f, flist, fname, recurse, 0);
 	}
+#if defined(__WATCOMC__) && defined(MSDOS)
+	/* Spurious ENOENT on the final readdir() of a subdirectory */
+	if (errno == ENOENT) {
+		errno = 0;
+	}
+#endif
 	if (errno) {
 		io_error |= IOERR_GENERAL;
 		rprintf(FERROR, "readdir(%s): (%d) %s\n",

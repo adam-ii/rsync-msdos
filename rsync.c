@@ -101,6 +101,12 @@ int delete_file(char *fname)
 			return -1;
 		}
 	}
+#if defined(__WATCOMC__) && defined(MSDOS)
+	/* Spurious ENOENT on the final readdir() of a subdirectory */
+	if (errno == ENOENT) {
+		errno = 0;
+	}
+#endif
 	if (errno) {
 		rprintf(FERROR, "delete_file: readdir %s failed: %s\n",
 			full_fname(fname), strerror(errno));
