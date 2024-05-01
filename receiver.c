@@ -378,14 +378,14 @@ int recv_files(int f_in,struct file_list *flist,char *local_name,int f_gen)
 	extern int orig_umask;
 	struct stats initial_stats;
 
-	coroutine_yield();
-
 	if (verbose > 2) {
 		rprintf(FINFO,"recv_files(%d) starting\n",flist->count);
 	}
 
 	while (1) {
 		cleanup_disable();
+
+		coroutine_yield_if(dos_select_read_ready(f_in) == 0);
 
 		i = read_int(f_in);
 		if (i == -1) {
@@ -395,7 +395,6 @@ int recv_files(int f_in,struct file_list *flist,char *local_name,int f_gen)
 				if (verbose > 2)
 					rprintf(FINFO,"recv_files phase=%d\n",phase);
 				write_int(f_gen,-1);
-				coroutine_yield();
 				continue;
 			}
 			break;

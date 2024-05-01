@@ -722,9 +722,16 @@ extern coro recv_files_coro;
 	{ if (verbose > 2) rprintf(FINFO, "coroutine_yield(file=%s, line=%d)\n", __FILE__, __LINE__); yield(NULL); }
 #define coroutine_resume(c) \
 	{ if (verbose > 2) rprintf(FINFO, "coroutine_resume(file=%s, line=%d)\n", __FILE__, __LINE__); resume(c, NULL); }
+#define coroutine_yield_if(cond) \
+	{ if (cond) coroutine_yield(); }
+#define coroutine_resume_if(c, cond) \
+	{ if (cond) coroutine_resume(c); }
+
 #else
 #define coroutine_yield() {}
 #define coroutine_resume(c) {}
+#define coroutine_yield_if(cond) {}
+#define coroutine_resume_if(c, cond) {}
 #endif
 
 #ifdef MSDOS

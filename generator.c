@@ -564,6 +564,8 @@ void generate_files(int f,struct file_list *flist,char *local_name,int f_recv)
 		recv_generator(local_name?local_name:f_name(file), flist,i,f);
 
 		file->mode = saved_mode;
+
+		coroutine_resume_if(recv_files_coro, dos_select_read_ready(f) == 1);
 	}
 
 	phase++;
@@ -582,6 +584,8 @@ void generate_files(int f,struct file_list *flist,char *local_name,int f_recv)
 	for (i=read_int(f_recv); i != -1; i=read_int(f_recv)) {
 		struct file_struct *file = flist->files[i];
 		recv_generator(local_name?local_name:f_name(file), flist,i,f);
+
+		coroutine_resume_if(recv_files_coro, dos_select_read_ready(f) == 1);
 	}
 
 	phase++;
