@@ -200,7 +200,9 @@ static int get_tmpname(char *fnametmp, char *fname)
 {
 	char *f;
 	int     length = 0;
+#ifndef MSDOS
 	int	maxname;
+#endif
 
 	if (tmpdir) {
 		strlcpy(fnametmp, tmpdir, MAXPATHLEN - 2);

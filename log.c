@@ -27,7 +27,9 @@
   */
 #include "rsync.h"
 
+#ifndef DISABLE_SERVER
 static int log_initialised;
+#endif
 static char *logfname;
 static FILE *logfile;
 static int log_error_fd = -1;
@@ -88,7 +90,11 @@ static struct err_list *err_list_head;
 static struct err_list *err_list_tail;
 
 /* add an error message to the pending error list */
+#if SIZEOF_INT == 2
+static void err_list_add(int32 code, char *buf, int len)
+#else
 static void err_list_add(int code, char *buf, int len)
+#endif
 {
 	struct err_list *el;
 	el = new(struct err_list);

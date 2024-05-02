@@ -15,6 +15,7 @@
 */
 
 #include "ringbuffer.h"
+#include <stdlib.h>
 #include <errno.h>
 
 int ring_buffer_init(struct ring_buffer_t *rb, size_t size)
