@@ -26,7 +26,7 @@
  * shutdown() of socket connections.  This eliminates the abortive
  * TCP RST sent by a Winsock-based system when the close() occurs.
  **/
-void close_all()
+void close_all(void)
 {
 #ifdef SHUTDOWN_ALL_SOCKETS
 	int max_fd;
@@ -137,8 +137,11 @@ void _exit_cleanup(int code, const char *file, int line)
 	}
 #endif
 
-	if (code == 0 && (io_error || log_got_error)) {
-		code = RERR_PARTIAL;
+	if (code == 0) {
+		if ((io_error & ~IOERR_VANISHED) || log_got_error)
+			code = RERR_PARTIAL;
+		else if (io_error)
+			code = RERR_VANISHED;
 	}
 
 	if (code) log_exit(code, file, line);

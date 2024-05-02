@@ -362,9 +362,10 @@ int robust_unlink(char *fname)
 			counter = 1;
 	} while (((rc = access(path, 0)) == 0) && (counter != start));
 
-	if (verbose > 0)
+	if (verbose > 0) {
 		rprintf(FINFO,"renaming %s to %s because of text busy\n",
-					    fname, path);
+			fname, path);
+	}
 
 	/* maybe we should return rename()'s exit status? Nah. */
 	if (do_rename(fname, path) != 0) {
@@ -490,14 +491,31 @@ int lock_range(int fd, int offset, int len)
 	return fcntl(fd,F_SETLK,&lock) == 0;
 }
 
+static int exclude_server_path(char *arg)
+{
+	char *s;
+	extern struct exclude_struct **server_exclude_list;
+
+	if (server_exclude_list) {
+		for (s = arg; (s = strchr(s, '/')) != NULL; ) {
+			*s = '\0';
+			if (check_exclude(server_exclude_list, arg, 1)) {
+				/* We must leave arg truncated! */
+				return 1;
+			}
+			*s++ = '/';
+		}
+	}
+	return 0;
+}
 
 static void glob_expand_one(char *s, char **argv, int *argc, int maxargs)
 {
 #if !(defined(HAVE_GLOB) && defined(HAVE_GLOB_H))
 	if (!*s) s = ".";
-	argv[*argc] = strdup(s);
+	s = argv[*argc] = strdup(s);
+	exclude_server_path(s);
 	(*argc)++;
-	return;
 #else
 	extern int sanitize_paths;
 	glob_t globbuf;
@@ -505,20 +523,21 @@ static void glob_expand_one(char *s, char **argv, int *argc, int maxargs)
 
 	if (!*s) s = ".";
 
-	argv[*argc] = strdup(s);
+	s = argv[*argc] = strdup(s);
 	if (sanitize_paths) {
-		sanitize_path(argv[*argc], NULL);
+		sanitize_path(s, NULL);
 	}
 
 	memset(&globbuf, 0, sizeof(globbuf));
-	glob(argv[*argc], 0, NULL, &globbuf);
+	if (!exclude_server_path(s))
+		glob(s, 0, NULL, &globbuf);
 	if (globbuf.gl_pathc == 0) {
 		(*argc)++;
 		globfree(&globbuf);
 		return;
 	}
 	for (i=0; i<(maxargs - (*argc)) && i < (int) globbuf.gl_pathc;i++) {
-		if (i == 0) free(argv[*argc]);
+		if (i == 0) free(s);
 		argv[(*argc) + i] = strdup(globbuf.gl_pathv[i]);
 		if (!argv[(*argc) + i]) out_of_memory("glob_expand");
 	}
@@ -527,29 +546,31 @@ static void glob_expand_one(char *s, char **argv, int *argc, int maxargs)
 #endif
 }
 
+/* This routine is only used in daemon mode. */
 void glob_expand(char *base1, char **argv, int *argc, int maxargs)
 {
 	char *s = argv[*argc];
 	char *p, *q;
 	char *base = base1;
+	int base_len = strlen(base);
 
 	if (!s || !*s) return;
 
-	if (strncmp(s, base, strlen(base)) == 0) {
-		s += strlen(base);
-	}
+	if (strncmp(s, base, base_len) == 0)
+		s += base_len;
 
 	s = strdup(s);
 	if (!s) out_of_memory("glob_expand");
 
 	if (asprintf(&base," %s/", base1) <= 0) out_of_memory("glob_expand");
+	base_len++;
 
 	q = s;
 	while ((p = strstr(q,base)) && ((*argc) < maxargs)) {
 		/* split it at this point */
 		*p = 0;
 		glob_expand_one(q, argv, argc, maxargs);
-		q = p+strlen(base);
+		q = p + base_len;
 	}
 
 	if (*q && (*argc < maxargs)) glob_expand_one(q, argv, argc, maxargs);
@@ -570,13 +591,6 @@ void strlower(char *s)
 		s++;
 	}
 }
-
-void *Realloc(void *p, int size)
-{
-	if (!p) return (void *)malloc(size);
-	return (void *)realloc(p, size);
-}
-
 
 void clean_fname(char *name)
 {
@@ -681,7 +695,7 @@ void sanitize_path(char *p, char *reldir)
 		}
 		allowdotdot = 0;
 		if ((*p == '.') && (*(p+1) == '.') &&
-			    ((*(p+2) == '/') || (*(p+2) == '\0'))) {
+		    ((*(p+2) == '/') || (*(p+2) == '\0'))) {
 			/* ".." component followed by slash or end */
 			if ((depth > 0) && (sanp == start)) {
 				/* allow depth levels of .. at the beginning */
@@ -732,7 +746,7 @@ void sanitize_path(char *p, char *reldir)
 }
 
 
-static char curr_dir[MAXPATHLEN];
+char curr_dir[MAXPATHLEN];
 
 /**
  * Like chdir() but can be reversed with pop_dir() if @p save is set.
@@ -758,7 +772,7 @@ char *push_dir(char *dir, int save)
 
 	if (*dir == '/') {
 		strlcpy(curr_dir, dir, sizeof(curr_dir));
-	} else {
+	} else if (dir[0] != '.' || dir[1] != '\0') {
 		strlcat(curr_dir,"/", sizeof(curr_dir));
 		strlcat(curr_dir,dir, sizeof(curr_dir));
 	}
@@ -784,6 +798,52 @@ int pop_dir(char *dir)
 	free(dir);
 
 	return 0;
+}
+
+/**
+ * Return a quoted string with the full pathname of the indicated filename.
+ * The string " (in MODNAME)" may also be appended.  The returned pointer
+ * remains valid until the next time full_fname() is called.
+ **/
+char *full_fname(char *fn)
+{
+	extern int module_id;
+	static char *result = NULL;
+	char *m1, *m2, *m3;
+	char *p1, *p2;
+
+	if (result)
+		free(result);
+
+	if (*fn == '/')
+		p1 = p2 = "";
+	else {
+		p1 = curr_dir;
+		p2 = "/";
+	}
+	if (module_id >= 0) {
+		m1 = " (in ";
+		m2 = lp_name(module_id);
+		m3 = ")";
+		if (*p1) {
+			if (!lp_use_chroot(module_id)) {
+				char *p = lp_path(module_id);
+				if (*p != '/' || p[1])
+					p1 += strlen(p);
+			}
+			if (!*p1)
+				p2++;
+			else
+				p1++;
+		}
+		else
+			fn++;
+	} else
+		m1 = m2 = m3 = "";
+
+	asprintf(&result, "\"%s%s%s\"%s%s%s", p1, p2, fn, m1, m2, m3);
+
+	return result;
 }
 
 /** We need to supply our own strcmp function for file list comparisons
@@ -976,3 +1036,27 @@ int _Insure_trap_error(int a1, int a2, int a3, int a4, int a5, int a6)
 	return ret;
 }
 #endif
+
+
+#if defined(__WATCOMC__) && defined(MSDOS) && defined(M_I86)
+#define MALLOC_MAX (unsigned long)0xFFE0 /* Maximum amount Watcom can fmalloc */
+#else
+#define MALLOC_MAX 0x40000000
+#endif
+
+void *_new_array(unsigned int size, unsigned long num)
+{
+	if (num >= MALLOC_MAX/size)
+		return NULL;
+	return malloc(size * num);
+}
+
+void *_realloc_array(void *ptr, unsigned int size, unsigned long num)
+{
+	if (num >= MALLOC_MAX/size)
+		return NULL;
+	/* No realloc should need this, but just in case... */
+	if (!ptr)
+		return malloc(size * num);
+	return realloc(ptr, size * num);
+}

@@ -194,6 +194,19 @@ int dos_select(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds, s
 	return n + select_rc;
 }
 
+int dos_select_read_ready(int fd)
+{
+	fd_set fds;
+	struct timeval tv;
+
+	FD_ZERO(&fds);
+	FD_SET(fd, &fds);
+	
+	tv.tv_sec = 0;
+	tv.tv_usec = 0;
+	return dos_select(fd + 1, &fds, NULL, NULL, &tv);
+}
+
 /* Restore start directory on exit or signal */
 static char dos_start_dir[MAXPATHLEN];
 static void (*dos_old_sigint)(int);

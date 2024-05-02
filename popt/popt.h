@@ -114,7 +114,11 @@
 struct poptOption {
 /*@observer@*/ /*@null@*/ const char * longName; /*!< may be NULL */
     char shortName;			/*!< may be '\0' */
+#if SIZEOF_INT == 2
+	long argInfo;
+#else
     int argInfo;
+#endif
 /*@shared@*/ /*@null@*/ void * arg;	/*!< depends on argInfo */
     int val;			/*!< 0 means don't return, just update flag */
 /*@observer@*/ /*@null@*/ const char * descrip;	/*!< description for autohelp -- may be NULL */

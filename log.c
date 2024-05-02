@@ -1,18 +1,18 @@
 /* -*- c-file-style: "linux"; -*-
-   
+
    Copyright (C) 1998-2001 by Andrew Tridgell <tridge@samba.org>
    Copyright (C) 2000-2001 by Martin Pool <mbp@samba.org>
-   
+
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
    the Free Software Foundation; either version 2 of the License, or
    (at your option) any later version.
-   
+
    This program is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
    GNU General Public License for more details.
-   
+
    You should have received a copy of the GNU General Public License
    along with this program; if not, write to the Free Software
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
@@ -27,7 +27,9 @@
   */
 #include "rsync.h"
 
+#ifndef DISABLE_SERVER
 static int log_initialised;
+#endif
 static char *logfname;
 static FILE *logfile;
 static int log_error_fd = -1;
@@ -39,26 +41,27 @@ struct {
         int code;
         char const *name;
 } const rerr_names[] = {
-	{ RERR_SYNTAX     , "syntax or usage error" }, 
-	{ RERR_PROTOCOL   , "protocol incompatibility" }, 
-	{ RERR_FILESELECT , "errors selecting input/output files, dirs" }, 
-	{ RERR_UNSUPPORTED, "requested action not supported" }, 
-	{ RERR_STARTCLIENT, "error starting client-server protocol" }, 
-	{ RERR_SOCKETIO   , "error in socket IO" }, 
-	{ RERR_FILEIO     , "error in file IO" }, 
-	{ RERR_STREAMIO   , "error in rsync protocol data stream" }, 
-	{ RERR_MESSAGEIO  , "errors with program diagnostics" }, 
-	{ RERR_IPC        , "error in IPC code" }, 
-	{ RERR_SIGNAL     , "received SIGUSR1 or SIGINT" }, 
-	{ RERR_WAITCHILD  , "some error returned by waitpid()" }, 
-	{ RERR_MALLOC     , "error allocating core memory buffers" }, 
-	{ RERR_PARTIAL    , "some files could not be transferred" }, 
-	{ RERR_TIMEOUT    , "timeout in data send/receive" }, 
+	{ RERR_SYNTAX     , "syntax or usage error" },
+	{ RERR_PROTOCOL   , "protocol incompatibility" },
+	{ RERR_FILESELECT , "errors selecting input/output files, dirs" },
+	{ RERR_UNSUPPORTED, "requested action not supported" },
+	{ RERR_STARTCLIENT, "error starting client-server protocol" },
+	{ RERR_SOCKETIO   , "error in socket IO" },
+	{ RERR_FILEIO     , "error in file IO" },
+	{ RERR_STREAMIO   , "error in rsync protocol data stream" },
+	{ RERR_MESSAGEIO  , "errors with program diagnostics" },
+	{ RERR_IPC        , "error in IPC code" },
+	{ RERR_SIGNAL     , "received SIGUSR1 or SIGINT" },
+	{ RERR_WAITCHILD  , "some error returned by waitpid()" },
+	{ RERR_MALLOC     , "error allocating core memory buffers" },
+	{ RERR_PARTIAL    , "some files could not be transferred" },
+	{ RERR_VANISHED   , "some files vanished before they could be transfered" },
+	{ RERR_TIMEOUT    , "timeout in data send/receive" },
 	{ RERR_CMD_FAILED , "remote shell failed" },
 	{ RERR_CMD_KILLED , "remote shell killed" },
 	{ RERR_CMD_RUN,     "remote command could not be run" },
-        { RERR_CMD_NOTFOUND, "remote command not found" },
-        { 0, NULL }
+	{ RERR_CMD_NOTFOUND, "remote command not found" },
+	{ 0, NULL }
 };
 
 
@@ -68,12 +71,12 @@ struct {
  */
 static char const *rerr_name(int code)
 {
-        int i;
-        for (i = 0; rerr_names[i].name; i++) {
-                if (rerr_names[i].code == code)
-                        return rerr_names[i].name;
-        }
-        return NULL;
+	int i;
+	for (i = 0; rerr_names[i].name; i++) {
+		if (rerr_names[i].code == code)
+			return rerr_names[i].name;
+	}
+	return NULL;
 }
 
 struct err_list {
@@ -87,13 +90,17 @@ static struct err_list *err_list_head;
 static struct err_list *err_list_tail;
 
 /* add an error message to the pending error list */
+#if SIZEOF_INT == 2
+static void err_list_add(int32 code, char *buf, int len)
+#else
 static void err_list_add(int code, char *buf, int len)
+#endif
 {
 	struct err_list *el;
-	el = (struct err_list *)malloc(sizeof(*el));
+	el = new(struct err_list);
 	if (!el) exit_cleanup(RERR_MALLOC);
 	el->next = NULL;
-	el->buf = malloc(len+4);
+	el->buf = new_array(char, len+4);
 	if (!el->buf) exit_cleanup(RERR_MALLOC);
 	memcpy(el->buf+4, buf, len);
 	SIVAL(el->buf, 0, ((code+MPLEX_BASE)<<24) | len);
@@ -117,7 +124,7 @@ void err_list_push(void)
 		struct err_list *el = err_list_head;
 		int n = write(log_error_fd, el->buf+el->written, el->len - el->written);
 		/* don't check for an error if the best way of handling the error is
-		   to ignore it */
+		 * to ignore it */
 		if (n == -1) break;
 		if (n > 0) {
 			el->written += n;
@@ -137,7 +144,7 @@ static void logit(int priority, char *buf)
 	if (logfname) {
 		if (!logfile)
 			log_open();
-		fprintf(logfile,"%s [%d] %s", 
+		fprintf(logfile,"%s [%d] %s",
 			timestring(time(NULL)), (int)getpid(), buf);
 		fflush(logfile);
 	} else {
@@ -157,8 +164,8 @@ void log_init(void)
 	log_initialised = 1;
 
 	/* this looks pointless, but it is needed in order for the
-	   C library on some systems to fetch the timezone info
-	   before the chroot */
+	 * C library on some systems to fetch the timezone info
+	 * before the chroot */
 	t = time(NULL);
 	localtime(&t);
 
@@ -207,7 +214,7 @@ void log_close(void)
 }
 
 /* setup the error file descriptor - used when we are a server
-   that is receiving files */
+ * that is receiving files */
 void set_error_fd(int fd)
 {
 	log_error_fd = fd;
@@ -215,7 +222,7 @@ void set_error_fd(int fd)
 }
 
 /* this is the underlying (unformatted) rsync debugging function. Call
-   it with FINFO, FERROR or FLOG */
+ * it with FINFO, FERROR or FLOG */
 void rwrite(enum logcode code, char *buf, int len)
 {
 	FILE *f=NULL;
@@ -242,9 +249,9 @@ void rwrite(enum logcode code, char *buf, int len)
 		return;
 	}
 
-	/* next, if we are a server but not in daemon mode, and multiplexing
-	 *  is enabled, pass it to the other side.  */
-	if (am_server && !am_daemon && io_multiplex_write(code, buf, len)) {
+	/* next, if we are a server and multiplexing is enabled,
+	 * pass it to the other side.  */
+	if (am_server && io_multiplex_write(code, buf, len)) {
 		return;
 	}
 
@@ -255,7 +262,9 @@ void rwrite(enum logcode code, char *buf, int len)
 	 *  side because we don't want the client to see most errors for
 	 *  security reasons.  We do want early messages when running daemon
 	 *  mode over a remote shell to go to the remote side; those will
-	 *  fall through to the next case. */
+	 *  fall through to the next case.
+	 * Note that this is only for the time before multiplexing is enabled.
+	 */
 	if (am_daemon && (!am_server || log_initialised)) {
 		static int depth;
 		int priority = LOG_INFO;
@@ -276,14 +285,14 @@ void rwrite(enum logcode code, char *buf, int len)
 	if (code == FERROR) {
 		log_got_error = 1;
 		f = stderr;
-	} 
+	}
 
 	if (code == FINFO) {
-		if (am_server) 
+		if (am_server)
 			f = stderr;
 		else
 			f = stdout;
-	} 
+	}
 
 	if (!f) exit_cleanup(RERR_MESSAGEIO);
 
@@ -297,7 +306,7 @@ void rwrite(enum logcode code, char *buf, int len)
  * FLOG. */
 void rprintf(enum logcode code, const char *format, ...)
 {
-	va_list ap;  
+	va_list ap;
 	char buf[1024];
 	int len;
 
@@ -346,11 +355,11 @@ void rprintf(enum logcode code, const char *format, ...)
  * message catalog we need to call it once before chroot-ing. */
 void rsyserr(enum logcode code, int errcode, const char *format, ...)
 {
-	va_list ap;  
+	va_list ap;
 	char buf[1024];
 	int len;
 	size_t sys_len;
-        char *sysmsg;
+	char *sysmsg;
 
 	va_start(ap, format);
 	/* Note: might return <0 */
@@ -362,17 +371,17 @@ void rsyserr(enum logcode code, int errcode, const char *format, ...)
 	if ((size_t) len > sizeof(buf)-1)
 		exit_cleanup(RERR_MESSAGEIO);
 
-        sysmsg = strerror(errcode);
-        sys_len = strlen(sysmsg);
-        if ((size_t) len + 3 + sys_len > sizeof(buf) - 1)
-                exit_cleanup(RERR_MESSAGEIO);
+	sysmsg = strerror(errcode);
+	sys_len = strlen(sysmsg);
+	if ((size_t) len + 3 + sys_len > sizeof(buf) - 1)
+		exit_cleanup(RERR_MESSAGEIO);
 
-        strcpy(buf + len, ": ");
-        len += 2;
-        strcpy(buf + len, sysmsg);
-        len += sys_len;
-        strcpy(buf + len, "\n");
-        len++;
+	strcpy(buf + len, ": ");
+	len += 2;
+	strcpy(buf + len, sysmsg);
+	len += sys_len;
+	strcpy(buf + len, "\n");
+	len++;
 
 	rwrite(code, buf, len);
 }
@@ -390,19 +399,19 @@ void rflush(enum logcode code)
 
 	if (code == FLOG) {
 		return;
-	} 
+	}
 
 	if (code == FERROR) {
 		f = stderr;
-	} 
+	}
 
 	if (code == FINFO) {
 		extern int am_server;
-		if (am_server) 
+		if (am_server)
 			f = stderr;
 		else
 			f = stdout;
-	} 
+	}
 
 	if (!f) exit_cleanup(RERR_MESSAGEIO);
 	fflush(f);
@@ -411,7 +420,7 @@ void rflush(enum logcode code)
 
 
 /* a generic logging routine for send/recv, with parameter
-   substitiution */
+ * substitiution */
 static void log_formatted(enum logcode code,
 			  char *format, char *op, struct file_struct *file,
 			  struct stats *initial_stats)
@@ -435,57 +444,56 @@ static void log_formatted(enum logcode code,
 	memset(buf, 0, sizeof buf);
 	strlcpy(buf, format, sizeof(buf));
 	
-	for (s=&buf[0]; 
-	     s && (p=strchr(s,'%')); ) {
+	for (s = &buf[0]; s && (p = strchr(s,'%')); ) {
 		n = NULL;
 		s = p + 1;
 
 		switch (p[1]) {
 		case 'h': if (am_daemon) n = client_name(0); break;
 		case 'a': if (am_daemon) n = client_addr(0); break;
-		case 'l': 
-			snprintf(buf2,sizeof(buf2),"%.0f", 
-				 (double)file->length); 
+		case 'l':
+			snprintf(buf2,sizeof(buf2),"%.0f",
+				 (double)file->length);
 			n = buf2;
 			break;
-		case 'p': 
-			snprintf(buf2,sizeof(buf2),"%d", 
-				 (int)getpid()); 
+		case 'p':
+			snprintf(buf2,sizeof(buf2),"%d",
+				 (int)getpid());
 			n = buf2;
 			break;
 		case 'o': n = op; break;
-		case 'f': 
-			snprintf(buf2, sizeof(buf2), "%s/%s", 
-				 file->basedir?file->basedir:"", 
+		case 'f':
+			snprintf(buf2, sizeof(buf2), "%s/%s",
+				 file->basedir?file->basedir:"",
 				 f_name(file));
 			clean_fname(buf2);
-			n = buf2; 
+			n = buf2;
 			if (*n == '/') n++;
 			break;
 		case 'm': n = lp_name(module_id); break;
 		case 't': n = timestring(time(NULL)); break;
 		case 'P': n = lp_path(module_id); break;
 		case 'u': n = auth_user; break;
-		case 'b': 
+		case 'b':
 			if (am_sender) {
-				b = stats.total_written - 
+				b = stats.total_written -
 					initial_stats->total_written;
 			} else {
-				b = stats.total_read - 
+				b = stats.total_read -
 					initial_stats->total_read;
 			}
-			snprintf(buf2,sizeof(buf2),"%.0f", (double)b); 
+			snprintf(buf2,sizeof(buf2),"%.0f", (double)b);
 			n = buf2;
 			break;
-		case 'c': 
+		case 'c':
 			if (!am_sender) {
-				b = stats.total_written - 
+				b = stats.total_written -
 					initial_stats->total_written;
 			} else {
-				b = stats.total_read - 
+				b = stats.total_read -
 					initial_stats->total_read;
 			}
-			snprintf(buf2,sizeof(buf2),"%.0f", (double)b); 
+			snprintf(buf2,sizeof(buf2),"%.0f", (double)b);
 			n = buf2;
 			break;
 		}
@@ -566,27 +574,19 @@ void log_exit(int code, const char *file, int line)
 			(double)stats.total_read,
 			(double)stats.total_size);
 	} else {
-                const char *name;
+		const char *name;
 
-                name = rerr_name(code);
-                if (!name)
-                        name = "unexplained error";
-                
-		rprintf(FERROR,"rsync error: %s (code %d) at %s(%d)\n", 
-			name, code, file, line);
+		name = rerr_name(code);
+		if (!name)
+			name = "unexplained error";
+
+		/* VANISHED is not an error, only a warning */
+		if (code == RERR_VANISHED) {
+			rprintf(FINFO, "rsync warning: %s (code %d) at %s(%d)\n", 
+				name, code, file, line);
+		} else {
+			rprintf(FERROR, "rsync error: %s (code %d) at %s(%d)\n",
+				name, code, file, line);
+		}
 	}
-}
-
-/*
- * Log the incoming transfer of a file for interactive use,
- * this will be called at the end where the client was run.
- * Called when a file starts to be transferred.
- */
-void log_transfer(struct file_struct *file, const char *fname)
-{
-	extern int verbose;
-
-	if (!verbose) return;
-
-	rprintf(FINFO, "%s\n", fname);
 }

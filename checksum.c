@@ -28,7 +28,7 @@ int32 checksum_seed = 0;
 #else
 int checksum_seed = 0;
 #endif
-extern int remote_version;
+extern int protocol_version;
 
 /*
   a simple 32 bit checksum that can be upadted from either end
@@ -62,7 +62,7 @@ void get_checksum2(char *buf,int len,char *sum)
 
 	if (len > len1) {
 		if (buf1) free(buf1);
-		buf1 = (char *)malloc(len+4);
+		buf1 = new_array(char, len+4);
 		len1 = len;
 		if (!buf1) out_of_memory("get_checksum2");
 	}
@@ -78,7 +78,13 @@ void get_checksum2(char *buf,int len,char *sum)
 	for(i = 0; i + CSUM_CHUNK <= len; i += CSUM_CHUNK) {
 		mdfour_update(&m, (uchar *)(buf1+i), CSUM_CHUNK);
 	}
-	if (len - i > 0) {
+	/*
+	 * Prior to version 27 an incorrect MD4 checksum was computed
+	 * by failing to call mdfour_tail() for block sizes that
+	 * are multiples of 64.  This is fixed by calling mdfour_update()
+	 * even when there are no more bytes.
+	 */
+	if (len - i > 0 || protocol_version >= 27) {
 		mdfour_update(&m, (uchar *)(buf1+i), (len-i));
 	}
 	
@@ -109,8 +115,16 @@ void file_checksum(char *fname,char *sum,OFF_T size)
 		mdfour_update(&m, (uchar *)tmpchunk, CSUM_CHUNK);
 	}
 
+	/*
+	 * Prior to version 27 an incorrect MD4 checksum was computed
+	 * by failing to call mdfour_tail() for block sizes that
+	 * are multiples of 64.  This is fixed by calling mdfour_update()
+	 * even when there are no more bytes.
+	 */
 	if (len - i > 0) {
 		memcpy(tmpchunk, map_ptr(buf,i,len-i), len-i);
+	}
+	if (len - i > 0 || protocol_version >= 27) {
 		mdfour_update(&m, (uchar *)tmpchunk, (len-i));
 	}
 
@@ -119,16 +133,6 @@ void file_checksum(char *fname,char *sum,OFF_T size)
 	close(fd);
 	unmap_file(buf);
 }
-
-
-void checksum_init(void)
-{
-  if (remote_version >= 14)
-    csum_length = 2; /* adaptive */
-  else
-    csum_length = SUM_LENGTH;
-}
-
 
 
 static int sumresidue;
@@ -184,7 +188,7 @@ void sum_update(char *p, int len)
 
 void sum_end(char *sum)
 {
-	if (sumresidue) {
+	if (sumresidue || protocol_version >= 27) {
 		mdfour_update(&md, (uchar *)sumrbuf, sumresidue);
 	}
 
