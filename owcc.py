@@ -186,6 +186,8 @@ def do_main():
             f'-bt={target_system.wcc_system}',  # build target for operating system
             '-wx',                              # set warning level to maximum setting
             '-j',                               # change char default from unsigned to signed
+            '-ze',                              # enable extensions (i.e., near, far, export, etc.)
+            '-DHAVE_C99_VSNPRINTF=1',
         ]
 
         if args.output:
