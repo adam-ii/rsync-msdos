@@ -429,28 +429,36 @@ static void do_server_sender(int f_in, int f_out, int argc,char *argv[])
 #ifdef DISABLE_FORK
 coro recv_files_coro;
 
+/*
+ * A structure to capture the local arguments from do_recv() needed by recv_files_coroutine()
+  */
 struct recv_file_coroutine_args
 {
 	int f_in;
 	struct file_list *flist;
 	char *local_name;
-	int recv_pipe[2];
+	int error_pipe[2];
 };
 
+/*
+ * Co-routine that replicates the child subprocess code path of fork() in do_recv(),
+ * minus the plumbing needed to manage resources in a forked process.
+ */
 void *recv_files_coroutine(void *args)
 {
 	struct recv_file_coroutine_args *p = (struct recv_file_coroutine_args*)args;
-	
+
 	if (verbose > 1)
 		rprintf(FINFO, "recv_files_coroutine starting\n");
 
-	recv_files(p->f_in,p->flist,p->local_name,p->recv_pipe[1]);
-	io_flush();
+	set_msg_fd_out(p->error_pipe[1]);
+
+	recv_files(p->f_in,p->flist,p->local_name);
+	io_flush(FULL_FLUSH);
 	report(p->f_in);
 
-	write_int(p->recv_pipe[1],1);
-	close(p->recv_pipe[1]);
-	io_flush();
+	send_msg(MSG_DONE, "", 0);
+	io_flush(FULL_FLUSH);
 
 	if (verbose > 1)
 		rprintf(FINFO, "recv_files_coroutine stopping\n");
@@ -466,9 +474,8 @@ static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
 	int pid;
 #endif
 	int status=0;
-#ifndef DISABLE_FORK
 	int error_pipe[2];
-#else
+#ifdef DISABLE_FORK
 	struct recv_file_coroutine_args coro_args;
 #endif
 
@@ -483,6 +490,11 @@ static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
 	}
 
 #ifdef DISABLE_FORK
+	/* On systems without pipe(), create an in-memory FIFO as a pseudo pipe between co-routines */
+	if (dos_pipe_open(error_pipe, 64) < 0) {
+		rprintf(FERROR,"dos_pipe_open failed in do_recv\n");
+		exit_cleanup(RERR_SOCKETIO);
+	}
 #else
 	if (fd_pair(error_pipe) < 0) {
 		rprintf(FERROR,"error pipe failed in do_recv\n");
@@ -498,13 +510,13 @@ static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
 	coro_args.f_in = f_in;
 	coro_args.flist = flist;
 	coro_args.local_name = local_name;
-	coro_args.recv_pipe[0] = recv_pipe[0];
-	coro_args.recv_pipe[1] = recv_pipe[1];
+	coro_args.error_pipe[0] = error_pipe[0];
+	coro_args.error_pipe[1] = error_pipe[1];
 
 	recv_files_coro = coroutine(recv_files_coroutine);
 	resume(recv_files_coro, &coro_args);
 
-	io_start_buffering(f_out);
+	io_start_buffering_out(f_out);
 #else
 	if ((pid=do_fork()) == 0) {
 		close(error_pipe[0]);
@@ -528,16 +540,20 @@ static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
 		while (1)
 			msleep(20);
 	}
+#endif
 
 	am_generator = 1;
 
+#ifdef DISABLE_FORK
+	dos_close_fd(error_pipe[1]);
+#else
 	close(error_pipe[1]);
 	if (f_in != f_out) close(f_in);
+#endif
 
 	io_start_buffering_out(f_out);
 
 	set_msg_fd_in(error_pipe[0]);
-#endif
 
 	generate_files(f_out, flist, local_name);
 
