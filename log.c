@@ -27,12 +27,20 @@
   */
 #include "rsync.h"
 
+extern int am_daemon;
+extern int am_server;
+extern int am_sender;
+extern int quiet;
+extern int module_id;
+extern int msg_fd_out;
+extern char *auth_user;
+extern char *log_format;
+
 #ifndef DISABLE_SERVER
 static int log_initialised;
 #endif
 static char *logfname;
 static FILE *logfile;
-static int log_error_fd = -1;
 struct stats stats;
 
 int log_got_error=0;
@@ -77,65 +85,6 @@ static char const *rerr_name(int code)
 			return rerr_names[i].name;
 	}
 	return NULL;
-}
-
-struct err_list {
-	struct err_list *next;
-	char *buf;
-	int len;
-	int written; /* how many bytes we have written so far */
-};
-
-static struct err_list *err_list_head;
-static struct err_list *err_list_tail;
-
-/* add an error message to the pending error list */
-#if SIZEOF_INT == 2
-static void err_list_add(int32 code, char *buf, int len)
-#else
-static void err_list_add(int code, char *buf, int len)
-#endif
-{
-	struct err_list *el;
-	el = new(struct err_list);
-	if (!el) exit_cleanup(RERR_MALLOC);
-	el->next = NULL;
-	el->buf = new_array(char, len+4);
-	if (!el->buf) exit_cleanup(RERR_MALLOC);
-	memcpy(el->buf+4, buf, len);
-	SIVAL(el->buf, 0, ((code+MPLEX_BASE)<<24) | len);
-	el->len = len+4;
-	el->written = 0;
-	if (err_list_tail) {
-		err_list_tail->next = el;
-	} else {
-		err_list_head = el;
-	}
-	err_list_tail = el;
-}
-
-
-/* try to push errors off the error list onto the wire */
-void err_list_push(void)
-{
-	if (log_error_fd == -1) return;
-
-	while (err_list_head) {
-		struct err_list *el = err_list_head;
-		int n = write(log_error_fd, el->buf+el->written, el->len - el->written);
-		/* don't check for an error if the best way of handling the error is
-		 * to ignore it */
-		if (n == -1) break;
-		if (n > 0) {
-			el->written += n;
-		}
-		if (el->written == el->len) {
-			free(el->buf);
-			err_list_head = el->next;
-			if (!err_list_head) err_list_tail = NULL;
-			free(el);
-		}
-	}
 }
 
 
@@ -213,27 +162,18 @@ void log_close(void)
 	}
 }
 
-/* setup the error file descriptor - used when we are a server
- * that is receiving files */
-void set_error_fd(int fd)
-{
-	log_error_fd = fd;
-	set_nonblocking(log_error_fd);
-}
-
 /* this is the underlying (unformatted) rsync debugging function. Call
  * it with FINFO, FERROR or FLOG */
 void rwrite(enum logcode code, char *buf, int len)
 {
 	FILE *f=NULL;
-	extern int am_daemon;
-	extern int am_server;
-	extern int quiet;
 	/* recursion can happen with certain fatal conditions */
 
-	if (quiet && code == FINFO) return;
+	if (quiet && code == FINFO)
+		return;
 
-	if (len < 0) exit_cleanup(RERR_MESSAGEIO);
+	if (len < 0)
+		exit_cleanup(RERR_MESSAGEIO);
 
 	buf[len] = 0;
 
@@ -242,17 +182,14 @@ void rwrite(enum logcode code, char *buf, int len)
 		return;
 	}
 
-	/* first try to pass it off to our sibling */
-	if (am_server && log_error_fd != -1) {
-		err_list_add(code, buf, len);
-		err_list_push();
-		return;
-	}
-
-	/* next, if we are a server and multiplexing is enabled,
-	 * pass it to the other side.  */
-	if (am_server && io_multiplex_write(code, buf, len)) {
-		return;
+	if (am_server) {
+		/* Pass it to non-server side, perhaps through our sibling. */
+		if (msg_fd_out >= 0) {
+			send_msg((enum msgcode)code, buf, len);
+			return;
+		}
+		if (io_multiplex_write((enum msgcode)code, buf, len))
+			return;
 	}
 
 #ifndef DISABLE_SERVER
@@ -391,7 +328,6 @@ void rsyserr(enum logcode code, int errcode, const char *format, ...)
 void rflush(enum logcode code)
 {
 	FILE *f = NULL;
-	extern int am_daemon;
 	
 	if (am_daemon) {
 		return;
@@ -406,7 +342,6 @@ void rflush(enum logcode code)
 	}
 
 	if (code == FINFO) {
-		extern int am_server;
 		if (am_server)
 			f = stderr;
 		else
@@ -425,15 +360,10 @@ static void log_formatted(enum logcode code,
 			  char *format, char *op, struct file_struct *file,
 			  struct stats *initial_stats)
 {
-	extern int module_id;
-	extern char *auth_user;
 	char buf[1024];
 	char buf2[1024];
 	char *p, *s, *n;
 	size_t l;
-	extern struct stats stats;		
-	extern int am_sender;
-	extern int am_daemon;
 	int64 b;
 
 	/* We expand % codes one by one in place in buf.  We don't
@@ -463,8 +393,8 @@ static void log_formatted(enum logcode code,
 			break;
 		case 'o': n = op; break;
 		case 'f':
-			snprintf(buf2, sizeof(buf2), "%s/%s",
-				 file->basedir?file->basedir:"",
+			pathjoin(buf2, sizeof buf2,
+				 file->basedir ? file->basedir : "",
 				 f_name(file));
 			clean_fname(buf2);
 			n = buf2;
@@ -531,10 +461,6 @@ static void log_formatted(enum logcode code,
 /* log the outgoing transfer of a file */
 void log_send(struct file_struct *file, struct stats *initial_stats)
 {
-	extern int module_id;
-	extern int am_server;
-	extern char *log_format;
-
 	if (lp_transfer_logging(module_id)) {
 		log_formatted(FLOG, lp_log_format(module_id), "send", file, initial_stats);
 	} else if (log_format && !am_server) {
@@ -545,10 +471,6 @@ void log_send(struct file_struct *file, struct stats *initial_stats)
 /* log the incoming transfer of a file */
 void log_recv(struct file_struct *file, struct stats *initial_stats)
 {
-	extern int module_id;
-	extern int am_server;
-	extern char *log_format;
-
 	if (lp_transfer_logging(module_id)) {
 		log_formatted(FLOG, lp_log_format(module_id), "recv", file, initial_stats);
 	} else if (log_format && !am_server) {
@@ -568,7 +490,6 @@ void log_recv(struct file_struct *file, struct stats *initial_stats)
 void log_exit(int code, const char *file, int line)
 {
 	if (code == 0) {
-		extern struct stats stats;		
 		rprintf(FLOG,"wrote %.0f bytes  read %.0f bytes  total size %.0f\n",
 			(double)stats.total_written,
 			(double)stats.total_read,

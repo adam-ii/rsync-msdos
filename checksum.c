@@ -24,9 +24,9 @@ int csum_length=2; /* initial value */
 #define CSUM_CHUNK 64
 
 #if SIZEOF_INT == 2
-int32 checksum_seed = 0;
+extern int32 checksum_seed;
 #else
-int checksum_seed = 0;
+extern int checksum_seed;
 #endif
 extern int protocol_version;
 

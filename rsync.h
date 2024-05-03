@@ -27,7 +27,7 @@
 #define RSYNC_RSH_IO_ENV "RSYNC_RSH_IO"
 
 #define RSYNC_NAME "rsync"
-#define RSYNCD_SYSCONF "/etc/rsyncd.conf"
+/* RSYNCD_SYSCONF is now set in config.h */
 #define RSYNCD_USERCONF "rsyncd.conf"
 
 #define DEFAULT_LOCK_FILE "/var/run/rsyncd.lock"
@@ -39,19 +39,30 @@
    incompatible with older versions :-( */
 #define CHAR_OFFSET 0
 
+/* These flags are only used during the flist transfer. */
 
-#define FLAG_DELETE (1<<0)
-#define SAME_MODE (1<<1)
-#define SAME_RDEV (1<<2)
-#define SAME_UID (1<<3)
-#define SAME_GID (1<<4)
-#define SAME_DIR (1<<5)
-#define SAME_NAME SAME_DIR
-#define LONG_NAME (1<<6)
-#define SAME_TIME (1<<7)
+#define XMIT_TOP_DIR (1<<0)
+#define XMIT_SAME_MODE (1<<1)
+#define XMIT_EXTENDED_FLAGS (1<<2)
+#define XMIT_SAME_RDEV_pre28 XMIT_EXTENDED_FLAGS /* Only in protocols < 28 */
+#define XMIT_SAME_UID (1<<3)
+#define XMIT_SAME_GID (1<<4)
+#define XMIT_SAME_NAME (1<<5)
+#define XMIT_LONG_NAME (1<<6)
+#define XMIT_SAME_TIME (1<<7)
+#define XMIT_SAME_RDEV_MAJOR (1<<8)
+#define XMIT_HAS_IDEV_DATA (1<<9)
+#define XMIT_SAME_DEV (1<<10)
+#define XMIT_RDEV_MINOR_IS_SMALL (1<<11)
+
+/* These flags are used in the live flist data. */
+
+#define FLAG_TOP_DIR (1<<0)
+#define FLAG_HLINK_EOL (1<<1)	/* generator only */
+#define FLAG_MOUNT_POINT (1<<2)	/* sender only */
 
 /* update this if you make incompatible changes */
-#define PROTOCOL_VERSION 27
+#define PROTOCOL_VERSION 28
 
 /* We refuse to interoperate with versions that are not in this range.
  * Note that we assume we'll work with later versions: the onus is on
@@ -70,8 +81,8 @@
  * unlikely to begin by sending a byte between MIN_PROTOCL_VERSION and
  * MAX_PROTOCOL_VERSION. */
 
-#define MIN_PROTOCOL_VERSION 17
-#define OLD_PROTOCOL_VERSION 20
+#define MIN_PROTOCOL_VERSION 20
+#define OLD_PROTOCOL_VERSION 25
 #define MAX_PROTOCOL_VERSION 40
 
 #define RSYNC_PORT 873
@@ -101,16 +112,27 @@
 #define SERVER_EXCLUDES	1
 #define ALL_EXCLUDES	2
 
-#define MISSING_OK    0
-#define MISSING_FATAL 1
+#define XFLG_FATAL_ERRORS	(1<<0)
+#define XFLG_DEF_INCLUDE	(1<<1)
+#define XFLG_WORDS_ONLY 	(1<<2)
+#define XFLG_WORD_SPLIT 	(1<<3)
 
-#define ADD_INCLUDE 1
-#define ADD_EXCLUDE 0
+#define FULL_FLUSH	1
+#define NORMAL_FLUSH	0
 
-/* Log values.  I *think* what these mean is: FLOG goes to the server
- * logfile; FERROR and FINFO try to end up on the client, with
- * different levels of filtering. */
-enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
+
+/* Log-message categories.  FLOG is only used on the daemon side to
+ * output messages to the log file. */
+enum logcode { FERROR=1, FINFO=2, FLOG=3 };
+
+/* Messages types that are sent over the message channel.  The logcode
+ * values must all be present here with identical numbers. */
+enum msgcode {
+	MSG_DATA=0,	/* raw data on the multiplexed stream */
+	MSG_ERROR=FERROR, MSG_INFO=FINFO, MSG_LOG=FLOG, /* remote logging */
+	MSG_REDO=4,	/* reprocess indicated flist index */
+	MSG_DONE=5,	/* current phase is done */
+};
 
 #include "errcode.h"
 
@@ -243,12 +265,19 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 # endif
 #endif
 
+#if MAJOR_IN_MKDEV
+#include <sys/mkdev.h>
+#elif MAJOR_IN_SYSMACROS
+#include <sys/sysmacros.h>
+#endif
+
 #ifdef HAVE_COMPAT_H
 #include <compat.h>
 #endif
 
 #include <assert.h>
 
+#include "lib/pool_alloc.h"
 
 #define BOOL int
 
@@ -339,17 +368,14 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
  * device numbers will be truncated.  But it's a kind of silly thing
  * to do anyhow.
  *
- * FIXME: In future, we should probable split the device number into
- * major/minor, and transfer the two parts as 32-bit ints.  That gives
- * you somewhat more of a chance that they'll come from a big machine
- * to a little one in a useful way.
- *
- * FIXME: Really we need an unsigned type, and we perhaps ought to
- * cope with platforms on which this is an unsigned int or even a
- * struct.  Later.
+ * FIXME: I don't think the code in flist.c has ever worked on a system
+ * where dev_t is a struct.
  */ 
-#define INO64_T uint64
-#define DEV64_T uint64
+
+struct idev {
+	uint64 inode;
+	uint64 dev;
+};
 
 #ifndef MIN
 #define MIN(a,b) ((a)<(b)?(a):(b))
@@ -385,52 +411,76 @@ enum logcode {FNONE=0, FERROR=1, FINFO=2, FLOG=3 };
 #define IN_LOOPBACKNET 127
 #endif
 
+#define GID_NONE (gid_t) -1
+
+#define HL_CHECK_MASTER	0
+#define HL_SKIP		1
+
+struct hlink {
+	int hlindex;
+	struct file_struct *next;
+};
+
+#define F_DEV	link_u.idev->dev
+#define F_INODE	link_u.idev->inode
+
+#define F_HLINDEX link_u.links->hlindex
+#define F_NEXT	link_u.links->next
+
 struct file_struct {
-	unsigned flags;
-	time_t modtime;
+	union {
+		dev_t rdev;	/* The device number, if this is a device */
+		char *sum;	/* Only a normal file can have a checksum */
+		char *link;	/* Points to symlink string, if a symlink */
+	} u;
 	OFF_T length;
-	mode_t mode;
-
-	INO64_T inode;
-	/** Device this file lives upon */
-	DEV64_T dev;
-
-	/** If this is a device node, the device number. */
-	DEV64_T rdev;
-	uid_t uid;
-	gid_t gid;
 	char *basename;
 	char *dirname;
 	char *basedir;
-	char *link;
-	char *sum;
+	union {
+		struct idev *idev;
+		struct hlink *links;
+	} link_u;
+	time_t modtime;
+	uid_t uid;
+	gid_t gid;
+	mode_t mode;
+	uchar flags;	/* this item MUST remain last */
 };
 
+/*
+ * Start the flist array at FLIST_START entries and grow it
+ * by doubling until FLIST_LINEAR then grow by FLIST_LINEAR
+ */
+#define FLIST_START	(32 * 1024)
+#define FLIST_LINEAR	(FLIST_START * 512)
 
-#if SIZEOF_INT == 2
-/* Avoid underflow of int comparison in string_area_malloc. */
-#define ARENA_SIZE	(16 * 1024)
-#else
-#define ARENA_SIZE	(32 * 1024)
-#endif
+/*
+ * Extent size for allocation pools A minimum size of 128KB
+ * is needed to mmap them so that freeing will release the
+ * space to the OS.
+ *
+ * Larger sizes reduce leftover fragments and speed free calls
+ * (when they happen) Smaller sizes increase the chance of
+ * freed allocations freeing whole extents.
+ */
+#define FILE_EXTENT	(256 * 1024)
+#define HLINK_EXTENT	(128 * 1024)
 
-struct string_area {
-	char *base;
-	char *end;
-	char *current;
-	struct string_area *next;
-};
+#define WITH_HLINK	1
+#define WITHOUT_HLINK	0
 
 struct file_list {
 	int count;
 	int malloced;
+	alloc_pool_t file_pool;
+	alloc_pool_t hlink_pool;
 	struct file_struct **files;
-	struct string_area *string_area;
 };
 
 struct sum_buf {
 	OFF_T offset;		/**< offset in file of this chunk */
-	int len;		/**< length of chunk of file */
+	unsigned int len;	/**< length of chunk of file */
 	int i;			/**< index of this chunk */
 	uint32 sum1;	        /**< simple checksum */
 	char sum2[SUM_LENGTH];	/**< checksum  */
@@ -439,9 +489,9 @@ struct sum_buf {
 struct sum_struct {
 	OFF_T flength;		/**< total file length */
 	size_t count;		/**< how many chunks */
-	size_t remainder;	/**< flength % block_length */
-	size_t blength;		/**< block_length */
-	size_t s2length;	/**< sum2_length */
+	unsigned int blength;	/**< block_length */
+	unsigned int remainder;	/**< flength % block_length */
+	int s2length;		/**< sum2_length */
 	struct sum_buf *sums;	/**< points to info for each chunk */
 };
 
@@ -464,11 +514,18 @@ struct map_struct {
 #define MATCHFLG_WILD2_PREFIX	(1<<2) /* pattern starts with '**' */
 #define MATCHFLG_ABS_PATH	(1<<3) /* path-match on absolute path */
 struct exclude_struct {
+	struct exclude_struct *next;
 	char *pattern;
 	int match_flags;
 	int include;
 	int directory;
 	int slash_cnt;
+};
+
+struct exclude_list_struct {
+	struct exclude_struct *head;
+	struct exclude_struct *tail;
+	char *debug_type;
 };
 
 struct stats {
@@ -481,6 +538,7 @@ struct stats {
 	int flist_size;
 	int num_files;
 	int num_transferred_files;
+	int current_file_index;
 };
 
 
@@ -561,6 +619,10 @@ extern int errno;
 
 #ifndef STDERR_FILENO
 #define STDERR_FILENO 2
+#endif
+
+#ifndef S_IRUSR
+#define S_IRUSR 0400
 #endif
 
 #ifndef S_IWUSR
@@ -695,6 +757,17 @@ size_t strlcat(char *d, const char *s, size_t bufsize);
 
 #define exit_cleanup(code) _exit_cleanup(code, __FILE__, __LINE__)
 
+#ifdef HAVE_GETEUID
+#define MY_UID() geteuid()
+#else
+#define MY_UID() getuid()
+#endif
+
+#ifdef HAVE_GETEGID
+#define MY_GID() getegid()
+#else
+#define MY_GID() getgid()
+#endif
 
 extern int verbose;
 

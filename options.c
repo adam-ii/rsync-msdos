@@ -21,7 +21,9 @@
 #include "rsync.h"
 #include "popt.h"
 
-extern struct exclude_struct **exclude_list;
+extern int sanitize_paths;
+extern char curr_dir[MAXPATHLEN];
+extern struct exclude_list_struct exclude_list;
 
 int make_backups = 0;
 
@@ -46,17 +48,17 @@ int preserve_gid = 0;
 int preserve_times = 0;
 int update_only = 0;
 int cvs_exclude = 0;
-int dry_run=0;
-int local_server=0;
-int ignore_times=0;
-int delete_mode=0;
-int delete_excluded=0;
-int one_file_system=0;
+int dry_run = 0;
+int local_server = 0;
+int ignore_times = 0;
+int delete_mode = 0;
+int delete_excluded = 0;
+int one_file_system = 0;
 int protocol_version = PROTOCOL_VERSION;
-int sparse_files=0;
-int do_compression=0;
-int am_root=0;
-int orig_umask=0;
+int sparse_files = 0;
+int do_compression = 0;
+int am_root = 0;
+int orig_umask = 0;
 int relative_paths = -1;
 int implied_dirs = 1;
 int numeric_ids = 0;
@@ -66,6 +68,7 @@ int read_only = 0;
 int module_id = -1;
 int am_server = 0;
 int am_sender = 0;
+int am_generator = 0;
 char *files_from = NULL;
 int filesfrom_fd = -1;
 char *remote_filesfrom_file = NULL;
@@ -73,23 +76,24 @@ int eol_nulls = 0;
 int recurse = 0;
 int am_daemon = 0;
 int daemon_over_rsh = 0;
-int do_stats=0;
-int do_progress=0;
-int keep_partial=0;
-int safe_symlinks=0;
-int copy_unsafe_links=0;
-int block_size=0;
-int size_only=0;
-int bwlimit=0;
-int delete_after=0;
-int only_existing=0;
-int opt_ignore_existing=0;
-int max_delete=0;
-int ignore_errors=0;
-int modify_window=0;
+int do_stats = 0;
+int do_progress = 0;
+int keep_partial = 0;
+int safe_symlinks = 0;
+int copy_unsafe_links = 0;
+int size_only = 0;
+int bwlimit = 0;
+int delete_after = 0;
+int only_existing = 0;
+int opt_ignore_existing = 0;
+int max_delete = 0;
+int ignore_errors = 0;
+int modify_window = 0;
 #ifndef DISABLE_FORK
-int blocking_io=-1;
+int blocking_io = -1;
 #endif
+int checksum_seed = 0;
+unsigned int block_size = 0;
 
 
 /** Network address family. **/
@@ -108,6 +112,7 @@ int write_batch = 0;
 int read_batch = 0;
 int backup_dir_len = 0;
 int backup_suffix_len;
+unsigned int backup_dir_remainder;
 
 char *backup_suffix = NULL;
 char *tmpdir = NULL;
@@ -118,6 +123,7 @@ char *log_format = NULL;
 char *password_file = NULL;
 char *rsync_path = RSYNC_PATH;
 char *backup_dir = NULL;
+char backup_dir_buf[MAXPATHLEN];
 int rsync_port = RSYNC_PORT;
 int link_dest = 0;
 
@@ -126,8 +132,11 @@ int quiet = 0;
 int always_checksum = 0;
 int list_only = 0;
 
+#define FIXED_CHECKSUM_SEED 32761
+#define MAX_BATCH_PREFIX_LEN 256	/* Must be less than MAXPATHLEN-13 */
 char *batch_prefix = NULL;
 
+static int daemon_opt;   /* sets am_daemon after option error-reporting */
 static int modify_window_set;
 
 /** Local address to bind.  As a character string because it's
@@ -167,7 +176,7 @@ static void print_rsync_version(enum logcode f)
 	rprintf(f, "<http://rsync.samba.org/>\n");
 	rprintf(f, "Capabilities: %d-bit files, %ssocketpairs, "
 		"%shard links, %ssymlinks, batchfiles, \n",
-		(int) (sizeof(OFF_T) * 8),
+		(int) (sizeof (OFF_T) * 8),
 		got_socketpair, hardlinks, links);
 
 	/* Note that this field may not have type ino_t.  It depends
@@ -175,8 +184,8 @@ static void print_rsync_version(enum logcode f)
 	 * macros. */
 	rprintf(f, "              %sIPv6, %d-bit system inums, %d-bit internal inums\n",
 		ipv6,
-		(int) (sizeof(dumstat->st_ino) * 8),
-		(int) (sizeof(INO64_T) * 8));
+		(int) (sizeof dumstat->st_ino * 8),
+		(int) (sizeof (uint64) * 8));
 #ifdef MAINTAINER_MODE
 	rprintf(f, "              panic action: \"%s\"\n",
 		get_panic_action());
@@ -232,10 +241,10 @@ void usage(enum logcode F)
 #ifndef MSDOS
   rprintf(F," -l, --links                 copy symlinks as symlinks\n");
 #endif
-  rprintf(F," -L, --copy-links            copy the referent of symlinks\n");
+  rprintf(F," -L, --copy-links            copy the referent of all symlinks\n");
 #ifndef MSDOS
-  rprintf(F,"     --copy-unsafe-links     copy links outside the source tree\n");
-  rprintf(F,"     --safe-links            ignore links outside the destination tree\n");
+  rprintf(F,"     --copy-unsafe-links     copy the referent of \"unsafe\" symlinks\n");
+  rprintf(F,"     --safe-links            ignore \"unsafe\" symlinks\n");
   rprintf(F," -H, --hard-links            preserve hard links\n");
   rprintf(F," -p, --perms                 preserve permissions\n");
   rprintf(F," -o, --owner                 preserve owner (root only)\n");
@@ -257,15 +266,15 @@ void usage(enum logcode F)
   rprintf(F,"     --ignore-existing       ignore files that already exist on receiving side\n");
   rprintf(F,"     --delete                delete files that don't exist on the sending side\n");
   rprintf(F,"     --delete-excluded       also delete excluded files on the receiving side\n");
-  rprintf(F,"     --delete-after          delete after transferring, not before\n");
-  rprintf(F,"     --ignore-errors         delete even if there are IO errors\n");
+  rprintf(F,"     --delete-after          receiver deletes after transferring, not before\n");
+  rprintf(F,"     --ignore-errors         delete even if there are I/O errors\n");
   rprintf(F,"     --max-delete=NUM        don't delete more than NUM files\n");
   rprintf(F,"     --partial               keep partially transferred files\n");
   rprintf(F,"     --force                 force deletion of directories even if not empty\n");
 #ifndef MSDOS
   rprintf(F,"     --numeric-ids           don't map uid/gid values by user/group name\n");
 #endif
-  rprintf(F,"     --timeout=TIME          set IO timeout in seconds\n");
+  rprintf(F,"     --timeout=TIME          set I/O timeout in seconds\n");
   rprintf(F," -I, --ignore-times          turn off mod time & file size quick check\n");
   rprintf(F,"     --size-only             ignore mod time for quick check (use size)\n");
   rprintf(F,"     --modify-window=NUM     compare mod times with reduced accuracy\n");
@@ -285,14 +294,14 @@ void usage(enum logcode F)
   rprintf(F," -0  --from0                 all *-from file lists are delimited by nulls\n");
   rprintf(F,"     --version               print version number\n");
 #ifndef DISABLE_SERVER
-  rprintf(F,"     --daemon                run as a rsync daemon\n");
+  rprintf(F,"     --daemon                run as an rsync daemon\n");
   rprintf(F,"     --no-detach             do not detach from the parent\n");
   rprintf(F,"     --address=ADDRESS       bind to the specified address\n");
   rprintf(F,"     --config=FILE           specify alternate rsyncd.conf file\n");
 #endif
   rprintf(F,"     --port=PORT             specify alternate rsyncd port number\n");
 #ifndef DISABLE_FORK
-  rprintf(F,"     --blocking-io           use blocking IO for the remote shell\n");
+  rprintf(F,"     --blocking-io           use blocking I/O for the remote shell\n");
   rprintf(F,"     --no-blocking-io        turn off --blocking-io\n");
 #endif
   rprintf(F,"     --stats                 give some file transfer stats\n");
@@ -319,7 +328,8 @@ void usage(enum logcode F)
 enum {OPT_VERSION = 1000, OPT_SENDER, OPT_EXCLUDE, OPT_EXCLUDE_FROM,
       OPT_DELETE_AFTER, OPT_DELETE_EXCLUDED, OPT_LINK_DEST,
       OPT_INCLUDE, OPT_INCLUDE_FROM, OPT_MODIFY_WINDOW,
-      OPT_READ_BATCH, OPT_WRITE_BATCH};
+      OPT_READ_BATCH, OPT_WRITE_BATCH,
+      OPT_REFUSED_BASE = 9000};
 
 static struct poptOption long_options[] = {
   /* longName, shortName, argInfo, argPtr, value, descrip, argDesc */
@@ -386,13 +396,13 @@ static struct poptOption long_options[] = {
   {"timeout",          0,  POPT_ARG_INT,    &io_timeout, 0, 0, 0 },
   {"temp-dir",        'T', POPT_ARG_STRING, &tmpdir, 0, 0, 0 },
   {"compare-dest",     0,  POPT_ARG_STRING, &compare_dest, 0, 0, 0 },
-  {"link-dest",        0,  POPT_ARG_STRING, 0,              OPT_LINK_DEST, 0, 0 },
+  {"link-dest",        0,  POPT_ARG_STRING, &compare_dest,  OPT_LINK_DEST, 0, 0 },
 #ifndef DISABLE_ZLIB
   /* TODO: Should this take an optional int giving the compression level? */
   {"compress",        'z', POPT_ARG_NONE,   &do_compression, 0, 0, 0 },
 #endif
 #ifndef DISABLE_SERVER
-  {"daemon",           0,  POPT_ARG_NONE,   &am_daemon, 0, 0, 0 },
+  {"daemon",           0,  POPT_ARG_NONE,   &daemon_opt, 0, 0, 0 },
   {"no-detach",        0,  POPT_ARG_NONE,   &no_detach, 0, 0, 0 },
 #endif
   {"stats",            0,  POPT_ARG_NONE,   &do_stats, 0, 0, 0 },
@@ -454,33 +464,34 @@ void option_error(void)
 
 
 /**
- * Check to see if we should refuse this option
+ * Tweak the option table to disable all options that the rsyncd.conf
+ * file has told us to refuse.
  **/
-static int check_refuse_options(char *ref, int opt)
+static void set_refuse_options(char *bp)
 {
-	int i, len;
-	char *p;
-	const char *name;
+	struct poptOption *op;
+	char *cp;
 
-	for (i=0; long_options[i].longName; i++) {
-		if (long_options[i].val == opt) break;
-	}
-
-	if (!long_options[i].longName) return 0;
-
-	name = long_options[i].longName;
-	len = strlen(name);
-
-	while ((p = strstr(ref,name))) {
-		if ((p==ref || p[-1]==' ') &&
-		    (p[len] == ' ' || p[len] == 0)) {
-			snprintf(err_buf,sizeof(err_buf),
-				 "The '%s' option is not supported by this server\n", name);
-			return 1;
+	while (1) {
+		if ((cp = strchr(bp, ' ')) != NULL)
+			*cp= '\0';
+		for (op = long_options; ; op++) {
+			if (!op->longName) {
+				rprintf(FLOG,
+				    "Unknown option %s in \"refuse options\" setting\n",
+				    bp);
+				break;
+			}
+			if (strcmp(bp, op->longName) == 0) {
+				op->val = (op - long_options)+OPT_REFUSED_BASE;
+				break;
+			}
 		}
-		ref += len;
+		if (!cp)
+			break;
+		*cp = ' ';
+		bp = cp + 1;
 	}
-	return 0;
 }
 
 
@@ -507,7 +518,11 @@ int parse_arguments(int *argc, const char ***argv, int frommain)
 {
 	int opt;
 	char *ref = lp_refuse_options(module_id);
+	const char *arg;
 	poptContext pc;
+
+	if (ref && *ref)
+		set_refuse_options(ref);
 
 	/* TODO: Call poptReadDefaultConfig; handle errors. */
 
@@ -516,10 +531,6 @@ int parse_arguments(int *argc, const char ***argv, int frommain)
 	pc = poptGetContext(RSYNC_NAME, *argc, *argv, long_options, 0);
 
 	while ((opt = poptGetNextOpt(pc)) != -1) {
-		if (ref) {
-			if (check_refuse_options(ref, opt)) return 0;
-		}
-
 		/* most options are handled automatically by popt;
 		 * only special cases are returned and listed here. */
 
@@ -546,53 +557,41 @@ int parse_arguments(int *argc, const char ***argv, int frommain)
 			break;
 
 		case OPT_EXCLUDE:
-			add_exclude(&exclude_list, poptGetOptArg(pc),
-				    ADD_EXCLUDE);
+			add_exclude(&exclude_list, poptGetOptArg(pc), 0);
 			break;
 
 		case OPT_INCLUDE:
 			add_exclude(&exclude_list, poptGetOptArg(pc),
-				    ADD_INCLUDE);
+				    XFLG_DEF_INCLUDE);
 			break;
 
 		case OPT_EXCLUDE_FROM:
-			add_exclude_file(&exclude_list, poptGetOptArg(pc),
-					 MISSING_FATAL, ADD_EXCLUDE);
+			arg = poptGetOptArg(pc);
+			if (sanitize_paths)
+				arg = alloc_sanitize_path(arg, curr_dir);
+			add_exclude_file(&exclude_list, arg,
+					 XFLG_FATAL_ERRORS);
 			break;
 
 		case OPT_INCLUDE_FROM:
-			add_exclude_file(&exclude_list, poptGetOptArg(pc),
-					 MISSING_FATAL, ADD_INCLUDE);
+			arg = poptGetOptArg(pc);
+			if (sanitize_paths)
+				arg = alloc_sanitize_path(arg, curr_dir);
+			add_exclude_file(&exclude_list, arg,
+					 XFLG_FATAL_ERRORS | XFLG_DEF_INCLUDE);
 			break;
 
 		case 'h':
 			usage(FINFO);
 			exit_cleanup(0);
 
-		case 'H':
-#if SUPPORT_HARD_LINKS
-			preserve_hard_links=1;
-#else
-			/* FIXME: Don't say "server" if this is
-			 * happening on the client. */
-			/* FIXME: Why do we have the duplicated
-			 * rprintf?  Everybody who gets this message
-			 * ought to send it to the client and also to
-			 * the logs. */
-			snprintf(err_buf, sizeof err_buf,
-				 "hard links are not supported on this %s\n",
-				 am_server ? "server" : "client");
-			rprintf(FERROR, "ERROR: %s", err_buf);
-			return 0;
-#endif /* SUPPORT_HARD_LINKS */
-			break;
-
 		case 'v':
 			verbose++;
 			break;
 
 		case 'q':
-			if (frommain) quiet++;
+			if (frommain)
+				quiet++;
 			break;
 
 		case OPT_SENDER:
@@ -611,16 +610,17 @@ int parse_arguments(int *argc, const char ***argv, int frommain)
 		case OPT_WRITE_BATCH:
 			/* popt stores the filename in batch_prefix for us */
 			write_batch = 1;
+			checksum_seed = FIXED_CHECKSUM_SEED;
 			break;
 
 		case OPT_READ_BATCH:
 			/* popt stores the filename in batch_prefix for us */
 			read_batch = 1;
+			checksum_seed = FIXED_CHECKSUM_SEED;
 			break;
 
 		case OPT_LINK_DEST:
 #if HAVE_LINK
-			compare_dest = (char *)poptGetOptArg(pc);
 			link_dest = 1;
 			break;
 #else
@@ -631,22 +631,64 @@ int parse_arguments(int *argc, const char ***argv, int frommain)
 			return 0;
 #endif
 
-
 		default:
-			/* FIXME: If --daemon is specified, then errors for later
-			 * parameters seem to disappear. */
-			snprintf(err_buf, sizeof(err_buf),
-				 "%s%s: %s\n",
-				 am_server ? "on remote machine: " : "",
-				 poptBadOption(pc, POPT_BADOPTION_NOALIAS),
-				 poptStrerror(opt));
+			/* A large opt value means that set_refuse_options()
+			 * turned this option off (opt-BASE is its index). */
+			if (opt >= OPT_REFUSED_BASE) {
+				struct poptOption *op =
+				    &long_options[opt-OPT_REFUSED_BASE];
+				int n = snprintf(err_buf, sizeof err_buf,
+				    "This server does not support --%s\n",
+				    op->longName) - 1;
+				if (op->shortName) {
+					snprintf(err_buf+n, sizeof err_buf-n,
+					    " (-%c)\n", op->shortName);
+				}
+			} else {
+				snprintf(err_buf, sizeof err_buf,
+				    "%s%s: %s\n",
+				    am_server ? "on remote machine: " : "",
+				    poptBadOption(pc, POPT_BADOPTION_NOALIAS),
+				    poptStrerror(opt));
+			}
 			return 0;
 		}
 	}
 
+#if !SUPPORT_LINKS
+	if (preserve_links && !am_sender) {
+		snprintf(err_buf, sizeof err_buf,
+			 "symlinks are not supported on this %s\n",
+			 am_server ? "server" : "client");
+		rprintf(FERROR, "ERROR: %s", err_buf);
+		return 0;
+	}
+#endif
+
+#if !SUPPORT_HARD_LINKS
+	if (preserve_hard_links) {
+		snprintf(err_buf, sizeof err_buf,
+			 "hard links are not supported on this %s\n",
+			 am_server ? "server" : "client");
+		rprintf(FERROR, "ERROR: %s", err_buf);
+		return 0;
+	}
+#endif
+
 	if (write_batch && read_batch) {
 		rprintf(FERROR,
 			"write-batch and read-batch can not be used together\n");
+		exit_cleanup(RERR_SYNTAX);
+	}
+	if (batch_prefix && strlen(batch_prefix) > MAX_BATCH_PREFIX_LEN) {
+		rprintf(FERROR,
+			"the batch-file prefix must be %d characters or less.\n",
+			MAX_BATCH_PREFIX_LEN);
+		exit_cleanup(RERR_SYNTAX);
+	}
+
+	if (tmpdir && strlen(tmpdir) >= MAXPATHLEN - 10) {
+		rprintf(FERROR, "the --temp-dir path is WAY too long.\n");
 		exit_cleanup(RERR_SYNTAX);
 	}
 
@@ -672,17 +714,54 @@ int parse_arguments(int *argc, const char ***argv, int frommain)
 	if (relative_paths < 0)
 		relative_paths = files_from? 1 : 0;
 
+	*argv = poptGetArgs(pc);
+	if (*argv)
+		*argc = count_args(*argv);
+	else
+		*argc = 0;
+
+	if (sanitize_paths) {
+		int i;
+		for (i = *argc; i-- > 0; )
+			(*argv)[i] = alloc_sanitize_path((*argv)[i], NULL);
+		if (tmpdir)
+			tmpdir = alloc_sanitize_path(tmpdir, curr_dir);
+		if (compare_dest)
+			compare_dest = alloc_sanitize_path(compare_dest, curr_dir);
+		if (backup_dir)
+			backup_dir = alloc_sanitize_path(backup_dir, curr_dir);
+		if (files_from)
+			files_from = alloc_sanitize_path(files_from, curr_dir);
+	}
+
+	if (daemon_opt) {
+		daemon_opt = 0;
+		am_daemon = 1;
+		return 1;
+	}
+
 	if (!backup_suffix)
-		backup_suffix = backup_dir? "" : BACKUP_SUFFIX;
+		backup_suffix = backup_dir ? "" : BACKUP_SUFFIX;
 	backup_suffix_len = strlen(backup_suffix);
 	if (strchr(backup_suffix, '/') != NULL) {
 		rprintf(FERROR, "--suffix cannot contain slashes: %s\n",
 			backup_suffix);
 		exit_cleanup(RERR_SYNTAX);
 	}
-	if (backup_dir)
-		backup_dir_len = strlen(backup_dir);
-	else if (!backup_suffix_len) {
+	if (backup_dir) {
+		backup_dir_len = strlcpy(backup_dir_buf, backup_dir, sizeof backup_dir_buf);
+		backup_dir_remainder = sizeof backup_dir_buf - backup_dir_len;
+		if (backup_dir_remainder < 32) {
+			rprintf(FERROR, "the --backup-dir path is WAY too long.\n");
+			exit_cleanup(RERR_SYNTAX);
+		}
+		if (backup_dir_buf[backup_dir_len - 1] != '/') {
+			backup_dir_buf[backup_dir_len++] = '/';
+			backup_dir_buf[backup_dir_len] = '\0';
+		}
+		if (verbose > 1 && !am_sender)
+			rprintf(FINFO, "backup_dir is %s\n", backup_dir_buf);
+	} else if (!backup_suffix_len && (!am_server || !am_sender)) {
 		rprintf(FERROR,
 			"--suffix cannot be a null string without --backup-dir\n");
 		exit_cleanup(RERR_SYNTAX);
@@ -691,15 +770,9 @@ int parse_arguments(int *argc, const char ***argv, int frommain)
 	if (do_progress && !verbose)
 		verbose = 1;
 
-	*argv = poptGetArgs(pc);
-	if (*argv)
-		*argc = count_args(*argv);
-	else
-		*argc = 0;
-
 	if (files_from) {
 		char *colon;
-		if (*argc != 2) {
+		if (*argc != 2 && !(am_server && am_sender && *argc == 1)) {
 			usage(FERROR);
 			exit_cleanup(RERR_SYNTAX);
 		}
@@ -719,9 +792,6 @@ int parse_arguments(int *argc, const char ***argv, int frommain)
 				exit_cleanup(RERR_SYNTAX);
 			}
 		} else {
-			extern int sanitize_paths;
-			if (sanitize_paths)
-				sanitize_path(strdup(files_from), NULL);
 			filesfrom_fd = open(files_from, O_RDONLY|O_BINARY);
 			if (filesfrom_fd < 0) {
 				rsyserr(FERROR, errno,
@@ -748,13 +818,7 @@ void server_options(char **args,int *argc)
 {
 	int ac = *argc;
 	static char argstr[50];
-	static char bsize[30];
-	static char iotime[30];
-	static char mdelete[30];
-	static char mwindow[30];
-	static char bw[50];
-	/* Leave room for ``--(write|read)-batch='' */
-	static char fext[MAXPATHLEN + 15];
+	char *arg;
 
 	int i, x;
 
@@ -777,7 +841,7 @@ void server_options(char **args,int *argc)
 
 	x = 1;
 	argstr[0] = '-';
-	for (i=0;i<verbose;i++)
+	for (i = 0; i < verbose; i++)
 		argstr[x++] = 'v';
 
 	/* the -q option is intentionally left out */
@@ -836,37 +900,38 @@ void server_options(char **args,int *argc)
 
 	argstr[x] = 0;
 
-	if (x != 1) args[ac++] = argstr;
+	if (x != 1)
+		args[ac++] = argstr;
 
 	if (block_size) {
-		snprintf(bsize,sizeof(bsize),"-B%d",block_size);
-		args[ac++] = bsize;
+		if (asprintf(&arg, "-B%u", block_size) < 0)
+			goto oom;
+		args[ac++] = arg;
 	}
 
 	if (max_delete && am_sender) {
-		snprintf(mdelete,sizeof(mdelete),"--max-delete=%d",max_delete);
-		args[ac++] = mdelete;
+		if (asprintf(&arg, "--max-delete=%d", max_delete) < 0)
+			goto oom;
+		args[ac++] = arg;
 	}
 
-	if (batch_prefix != NULL) {
-		char *fmt = "";
-		if (write_batch)
-			fmt = "--write-batch=%s";
-		else
-		if (read_batch)
-			fmt = "--read-batch=%s";
-		snprintf(fext,sizeof(fext),fmt,batch_prefix);
-		args[ac++] = fext;
+	if (batch_prefix) {
+		char *r_or_w = write_batch ? "write" : "read";
+		if (asprintf(&arg, "--%s-batch=%s", r_or_w, batch_prefix) < 0)
+			goto oom;
+		args[ac++] = arg;
 	}
 
 	if (io_timeout) {
-		snprintf(iotime,sizeof(iotime),"--timeout=%d",io_timeout);
-		args[ac++] = iotime;
+		if (asprintf(&arg, "--timeout=%d", io_timeout) < 0)
+			goto oom;
+		args[ac++] = arg;
 	}
 
 	if (bwlimit) {
-		snprintf(bw,sizeof(bw),"--bwlimit=%d",bwlimit);
-		args[ac++] = bw;
+		if (asprintf(&arg, "--bwlimit=%d", bwlimit) < 0)
+			goto oom;
+		args[ac++] = arg;
 	}
 
 	if (backup_dir) {
@@ -875,28 +940,25 @@ void server_options(char **args,int *argc)
 	}
 
 	/* Only send --suffix if it specifies a non-default value. */
-	if (strcmp(backup_suffix, backup_dir? "" : BACKUP_SUFFIX) != 0) {
-		char *s = new_array(char, 9+backup_suffix_len+1);
-		if (!s)
-			out_of_memory("server_options");
+	if (strcmp(backup_suffix, backup_dir ? "" : BACKUP_SUFFIX) != 0) {
 		/* We use the following syntax to avoid weirdness with '~'. */
-		sprintf(s, "--suffix=%s", backup_suffix);
-		args[ac++] = s;
+		if (asprintf(&arg, "--suffix=%s", backup_suffix) < 0)
+			goto oom;
+		args[ac++] = arg;
 	}
-
-	if (delete_mode && !delete_excluded)
-		args[ac++] = "--delete";
 
 	if (delete_excluded)
 		args[ac++] = "--delete-excluded";
+	else if (delete_mode)
+		args[ac++] = "--delete";
 
 	if (size_only)
 		args[ac++] = "--size-only";
 
 	if (modify_window_set) {
-		snprintf(mwindow,sizeof(mwindow),"--modify-window=%d",
-			 modify_window);
-		args[ac++] = mwindow;
+		if (asprintf(&arg, "--modify-window=%d", modify_window) < 0)
+			goto oom;
+		args[ac++] = arg;
 	}
 
 	if (keep_partial)
@@ -953,6 +1015,10 @@ void server_options(char **args,int *argc)
 	}
 
 	*argc = ac;
+	return;
+
+    oom:
+	out_of_memory("server_options");
 }
 
 /**
@@ -964,12 +1030,14 @@ char *find_colon(char *s)
 	char *p, *p2;
 
 	p = strchr(s,':');
-	if (!p) return NULL;
+	if (!p)
+		return NULL;
 
 	/* now check to see if there is a / in the string before the : - if there is then
 	   discard the colon on the assumption that the : is part of a filename */
 	p2 = strchr(s,'/');
-	if (p2 && p2 < p) return NULL;
+	if (p2 && p2 < p)
+		return NULL;
 
 	return p;
 }

@@ -25,6 +25,8 @@ extern struct stats stats;
 extern int io_error;
 extern int dry_run;
 extern int am_server;
+extern int am_daemon;
+extern int protocol_version;
 
 
 /**
@@ -34,12 +36,8 @@ extern int am_server;
  * and transmits them to the receiver.  The sender process runs on the
  * machine holding the source files.
  **/
-
-
 void read_sum_head(int f, struct sum_struct *sum)
 {
-	extern int protocol_version;
-
 	sum->count = read_int(f);
 	sum->blength = read_int(f);
 	if (protocol_version < 27) {
@@ -71,10 +69,10 @@ static struct sum_struct *receive_sums(int f)
 
 	s->sums = NULL;
 
-	if (verbose > 3)
-		rprintf(FINFO, "count=%ld n=%ld rem=%ld\n",
-			(long) s->count, (long) s->blength,
-			(long) s->remainder);
+	if (verbose > 3) {
+		rprintf(FINFO, "count=%ld n=%u rem=%u\n",
+			(long)s->count, s->blength, s->remainder);
+	}
 
 	if (s->count == 0)
 		return(s);
@@ -128,19 +126,19 @@ void send_files(struct file_list *flist, int f_out, int f_in)
 	int phase = 0;
 	extern struct stats stats;
 	struct stats initial_stats;
-	extern int write_batch;   /* dw */
-	extern int read_batch;    /* dw */
-	int checksums_match;   /* dw */
-	int buff_len;  /* dw */
-	char buff[CHUNK_SIZE];    /* dw */
-	int j;   /* dw */
-	int done;   /* dw */
+	extern int write_batch;
+	extern int read_batch;
+	int checksums_match;
+	int buff_len;
+	char buff[CHUNK_SIZE];
+	int j;
+	int done;
 
 	if (verbose > 2)
 		rprintf(FINFO, "send_files starting\n");
 
 	while (1) {
-		int offset = 0;
+		unsigned int offset;
 
 		i = read_int(f_in);
 		if (i == -1) {
@@ -163,22 +161,18 @@ void send_files(struct file_list *flist, int f_out, int f_in)
 
 		file = flist->files[i];
 
+		stats.current_file_index = i;
 		stats.num_transferred_files++;
 		stats.total_transferred_size += file->length;
 
-		fname[0] = 0;
 		if (file->basedir) {
-			strlcpy(fname, file->basedir, MAXPATHLEN);
-			if (strlen(fname) == MAXPATHLEN-1) {
-				io_error |= IOERR_GENERAL;
-				rprintf(FERROR, "send_files failed on long-named directory %s\n",
-					full_fname(fname));
-				return;
-			}
-			strlcat(fname, "/", MAXPATHLEN);
-			offset = strlen(file->basedir)+1;
-		}
-		strlcat(fname, f_name(file), MAXPATHLEN);
+			/* N.B. We're sure that this fits, so offset is OK. */
+			offset = strlcpy(fname, file->basedir, sizeof fname);
+			if (!offset || fname[offset-1] != '/')
+				fname[offset++] = '/';
+		} else
+			offset = 0;
+		f_name_to(file, fname + offset);
 
 		if (verbose > 2)
 			rprintf(FINFO, "send_files(%d, %s)\n", i, fname);
@@ -201,15 +195,18 @@ void send_files(struct file_list *flist, int f_out, int f_in)
 		}
 
 		if (write_batch)
-			write_batch_csum_info(&i, flist->count, s);
+			write_batch_csum_info(&i, s);
 
 		if (!read_batch) {
 			fd = do_open(fname, O_RDONLY, 0);
 			if (fd == -1) {
 				if (errno == ENOENT) {
+					enum logcode c = am_daemon
+					    && protocol_version < 28 ? FERROR
+								     : FINFO;
 					io_error |= IOERR_VANISHED;
-					rprintf(FINFO, "file has vanished: %s\n",
-			 			full_fname(fname));
+					rprintf(c, "file has vanished: %s\n",
+						full_fname(fname));
 				} else {
 					io_error |= IOERR_GENERAL;
 					rprintf(FERROR, "send_files failed to open %s: %s\n",
@@ -241,7 +238,7 @@ void send_files(struct file_list *flist, int f_out, int f_in)
 			write_int(f_out, i);
 
 			if (write_batch)
-				write_batch_delta_file((char *)&i, sizeof(i));
+				write_batch_delta_file((char *)&i, sizeof i);
 
 			write_sum_head(f_out, s);
 		}
@@ -255,11 +252,11 @@ void send_files(struct file_list *flist, int f_out, int f_in)
 
 		set_compression(fname);
 
-		if (read_batch) { /* dw */
+		if (read_batch) {
 			/* read checksums originally computed on sender side */
 			read_batch_csum_info(i, s, &checksums_match);
 			if (checksums_match) {
-				read_batch_delta_file( (char *) &j, sizeof(int) );
+				read_batch_delta_file((char*)&j, sizeof (int));
 				if (j != i) {    /* if flist index entries don't match*/
 					rprintf(FINFO, "index mismatch in send_files\n");
 					rprintf(FINFO, "read index = %d flist ndx = %d\n", j, i);
@@ -271,7 +268,7 @@ void send_files(struct file_list *flist, int f_out, int f_in)
 					write_sum_head(f_out, s);
 					done = 0;
 					while (!done) {
-						read_batch_delta_file( (char *) &buff_len, sizeof(int) );
+						read_batch_delta_file((char*)&buff_len, sizeof (int));
 						write_int(f_out, buff_len);
 						if (buff_len == 0) {
 							done = 1;
@@ -296,7 +293,7 @@ void send_files(struct file_list *flist, int f_out, int f_in)
 			log_send(file, &initial_stats);
 		}
 
-		if (!read_batch) { /* dw */
+		if (!read_batch) {
 			if (buf) {
 				j = unmap_file(buf);
 				if (j) {
@@ -321,7 +318,7 @@ void send_files(struct file_list *flist, int f_out, int f_in)
 	match_report();
 
 	write_int(f_out, -1);
-	if (write_batch || read_batch) { /* dw */
+	if (write_batch || read_batch) {
 		close_batch_csums_file();
 		close_batch_delta_file();
 	}

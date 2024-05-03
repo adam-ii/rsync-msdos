@@ -24,14 +24,40 @@
 time_t starttime = 0;
 
 extern struct stats stats;
-extern char *files_from;
-extern int filesfrom_fd;
-extern char *remote_filesfrom_file;
+extern int am_root;
 extern int am_server;
 extern int am_sender;
+extern int am_generator;
 extern int am_daemon;
 extern int verbose;
+extern int blocking_io;
+extern int cvs_exclude;
+extern int delete_mode;
+extern int delete_excluded;
+extern int delete_after;
+extern int daemon_over_rsh;
+extern int do_stats;
+extern int dry_run;
+extern int list_only;
+extern int local_server;
+extern int log_got_error;
+extern int module_id;
+extern int orig_umask;
+extern int preserve_hard_links;
 extern int protocol_version;
+extern int recurse;
+extern int relative_paths;
+extern int rsync_port;
+extern int read_batch;
+extern int write_batch;
+extern int filesfrom_fd;
+extern pid_t cleanup_child_pid;
+extern char *files_from;
+extern char *remote_filesfrom_file;
+extern char *rsync_path;
+extern char *shell_cmd;
+extern struct file_list *batch_flist;
+
 
 /* there's probably never more than at most 2 outstanding child processes,
  * but set it higher just in case.
@@ -56,7 +82,7 @@ void wait_process(pid_t pid, int *status)
 
 	while ((waited_pid = waitpid(pid, status, WNOHANG)) == 0) {
 		msleep(20);
-		io_flush();
+		io_flush(FULL_FLUSH);
 	}
 
 	if ((waited_pid == -1) && (errno == ECHILD)) {
@@ -84,14 +110,15 @@ void wait_process(pid_t pid, int *status)
 static void report(int f)
 {
 	time_t t = time(NULL);
-	extern int do_stats;
-	int send_stats;
 
 	if (do_stats && verbose > 1) {
 		/* These come out from every process */
 		show_malloc_stats();
 		show_flist_stats();
 	}
+
+	if (am_generator)
+		return;
 
 #ifndef DISABLE_SERVER
 	if (am_daemon) {
@@ -100,10 +127,9 @@ static void report(int f)
 	}
 #endif
 
-	send_stats = verbose || protocol_version >= 20;
 #ifndef DISABLE_SERVER
 	if (am_server) {
-		if (am_sender && send_stats) {
+		if (am_sender) {
 			int64 w;
 			/* store total_written in a temporary
 			 * because write_longint changes it */
@@ -118,7 +144,7 @@ static void report(int f)
 
 	/* this is the client */
 
-	if (!am_sender && send_stats) {
+	if (!am_sender) {
 		int64 r;
 		stats.total_written = read_longint(f);
 		/* store total_read in a temporary, read_longint changes it */
@@ -128,12 +154,6 @@ static void report(int f)
 	}
 
 	if (do_stats) {
-		if (!am_sender && !send_stats) {
-			/* missing the bytes written by the generator */
-			rprintf(FINFO, "\nCannot show stats as receiver because remote protocol version is less than 20\n");
-			rprintf(FINFO, "Use --stats -v to show stats\n");
-			return;
-		}
 		rprintf(FINFO,"\nNumber of files: %d\n", stats.num_files);
 		rprintf(FINFO,"Number of files transferred: %d\n",
 			stats.num_transferred_files);
@@ -181,12 +201,14 @@ static void show_malloc_stats(void)
 		getpid(),
 		am_server ? "server " : "",
 		am_daemon ? "daemon " : "",
-		am_sender ? "sender" : "receiver");
+		who_am_i());
 	rprintf(FINFO, "  arena:     %10d   (bytes from sbrk)\n", mi.arena);
 	rprintf(FINFO, "  ordblks:   %10d   (chunks not in use)\n", mi.ordblks);
 	rprintf(FINFO, "  smblks:    %10d\n", mi.smblks);
 	rprintf(FINFO, "  hblks:     %10d   (chunks from mmap)\n", mi.hblks);
 	rprintf(FINFO, "  hblkhd:    %10d   (bytes from mmap)\n", mi.hblkhd);
+	rprintf(FINFO, "  allmem:    %10d   (bytes from sbrk + mmap)\n",
+	    mi.arena + mi.hblkhd);
 	rprintf(FINFO, "  usmblks:   %10d\n", mi.usmblks);
 	rprintf(FINFO, "  fsmblks:   %10d\n", mi.fsmblks);
 	rprintf(FINFO, "  uordblks:  %10d   (bytes used)\n", mi.uordblks);
@@ -198,18 +220,14 @@ static void show_malloc_stats(void)
 
 #ifndef DISABLE_FORK
 /* Start the remote shell.   cmd may be NULL to use the default. */
-static pid_t do_cmd(char *cmd,char *machine,char *user,char *path,int *f_in,int *f_out)
+static pid_t do_cmd(char *cmd, char *machine, char *user, char *path,
+		    int *f_in, int *f_out)
 {
+	int i, argc = 0;
 	char *args[100];
-	int i,argc=0;
 	pid_t ret;
-	char *tok,*dir=NULL;
+	char *tok, *dir = NULL;
 	int dash_l_set = 0;
-	extern int local_server;
-	extern char *rsync_path;
-	extern int blocking_io;
-	extern int daemon_over_rsh;
-	extern int read_batch;
 
 	if (!read_batch && !local_server) {
 		char *rsh_env = getenv(RSYNC_RSH_ENV);
@@ -221,9 +239,8 @@ static pid_t do_cmd(char *cmd,char *machine,char *user,char *path,int *f_in,int 
 		if (!cmd)
 			goto oom;
 
-		for (tok=strtok(cmd," ");tok;tok=strtok(NULL," ")) {
+		for (tok = strtok(cmd, " "); tok; tok = strtok(NULL, " "))
 			args[argc++] = tok;
-		}
 
 		/* check to see if we've already been given '-l user' in
 		 * the remote-shell command */
@@ -267,6 +284,11 @@ static pid_t do_cmd(char *cmd,char *machine,char *user,char *path,int *f_in,int 
 	if (!daemon_over_rsh && path && *path)
 		args[argc++] = path;
 
+	if (argc >= (int)(sizeof args / sizeof args[0])) {
+		rprintf(FERROR, "internal: args[] overflowed in do_cmd()\n");
+		exit_cleanup(RERR_MALLOC); /* XXX Need better RERR? */
+	}
+
 	args[argc] = NULL;
 
 	if (verbose > 3) {
@@ -300,13 +322,10 @@ oom:
 #endif
 
 
-
-
 static char *get_local_name(struct file_list *flist,char *name)
 {
 	STRUCT_STAT st;
 	int e;
-	extern int orig_umask;
 
 	if (verbose > 2)
 		rprintf(FINFO,"get_local_name count=%d %s\n",
@@ -317,7 +336,7 @@ static char *get_local_name(struct file_list *flist,char *name)
 
 	if (do_stat(name,&st) == 0) {
 		if (S_ISDIR(st.st_mode)) {
-			if (!push_dir(name, 0)) {
+			if (!push_dir(name)) {
 				rprintf(FERROR, "push_dir %s failed: %s (1)\n",
 					full_fname(name), strerror(errno));
 				exit_cleanup(RERR_FILESELECT);
@@ -343,7 +362,7 @@ static char *get_local_name(struct file_list *flist,char *name)
 			rprintf(FINFO,"created directory %s\n",name);
 	}
 
-	if (!push_dir(name, 0)) {
+	if (!push_dir(name)) {
 		rprintf(FERROR, "push_dir %s failed: %s (2)\n",
 			full_fname(name), strerror(errno));
 		exit_cleanup(RERR_FILESELECT);
@@ -353,21 +372,19 @@ static char *get_local_name(struct file_list *flist,char *name)
 }
 
 
-
-
 #ifndef DISABLE_SERVER
 static void do_server_sender(int f_in, int f_out, int argc,char *argv[])
 {
 	int i;
 	struct file_list *flist;
 	char *dir = argv[0];
-	extern int relative_paths;
-	extern int recurse;
 
-	if (verbose > 2)
-		rprintf(FINFO,"server_sender starting pid=%d\n",(int)getpid());
+	if (verbose > 2) {
+		rprintf(FINFO, "server_sender starting pid=%ld\n",
+			(long)getpid());
+	}
 
-	if (!relative_paths && !push_dir(dir, 0)) {
+	if (!relative_paths && !push_dir(dir)) {
 		rprintf(FERROR, "push_dir %s failed: %s (3)\n",
 			full_fname(dir), strerror(errno));
 		exit_cleanup(RERR_FILESELECT);
@@ -394,14 +411,16 @@ static void do_server_sender(int f_in, int f_out, int argc,char *argv[])
 		exit_cleanup(0);
 	}
 
+	io_start_buffering_in(f_in);
+	io_start_buffering_out(f_out);
 	send_files(flist,f_out,f_in);
-	io_flush();
+	io_flush(FULL_FLUSH);
 	report(f_out);
 	if (protocol_version >= 24) {
 		/* final goodbye message */
- 		read_int(f_in);
- 	}
-	io_flush();
+		read_int(f_in);
+	}
+	io_flush(FULL_FLUSH);
 	exit_cleanup(0);
 }
 #endif
@@ -447,16 +466,11 @@ static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
 	int pid;
 #endif
 	int status=0;
-	int recv_pipe[2];
 #ifndef DISABLE_FORK
 	int error_pipe[2];
 #else
 	struct recv_file_coroutine_args coro_args;
 #endif
-	extern int preserve_hard_links;
-	extern int delete_after;
-	extern int recurse;
-	extern int delete_mode;
 
 	if (preserve_hard_links)
 		init_hard_links(flist);
@@ -469,24 +483,14 @@ static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
 	}
 
 #ifdef DISABLE_FORK
-	/* On systems without pipe(), create an in-memory FIFO for the recv pipe */
-	if (dos_pipe_open(recv_pipe, 64) < 0) {
-		rprintf(FERROR,"dos_pipe_open failed in do_recv\n");
-		exit_cleanup(RERR_SOCKETIO);
-	}
 #else
-	if (fd_pair(recv_pipe) < 0) {
-		rprintf(FERROR,"pipe failed in do_recv\n");
-		exit_cleanup(RERR_SOCKETIO);
-	}
-
 	if (fd_pair(error_pipe) < 0) {
 		rprintf(FERROR,"error pipe failed in do_recv\n");
 		exit_cleanup(RERR_SOCKETIO);
 	}
 #endif
 
-	io_flush();
+	io_flush(NORMAL_FLUSH);
 
 #ifdef DISABLE_FORK
 	/* On systems without fork(), create a co-routine to interleave execution of
@@ -503,7 +507,6 @@ static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
 	io_start_buffering(f_out);
 #else
 	if ((pid=do_fork()) == 0) {
-		close(recv_pipe[0]);
 		close(error_pipe[0]);
 		if (f_in != f_out) close(f_out);
 
@@ -511,46 +514,43 @@ static int do_recv(int f_in,int f_out,struct file_list *flist,char *local_name)
 		io_multiplexing_close();
 
 		/* set place to send errors */
-		set_error_fd(error_pipe[1]);
+		set_msg_fd_out(error_pipe[1]);
 
-		recv_files(f_in,flist,local_name,recv_pipe[1]);
-		io_flush();
+		recv_files(f_in,flist,local_name);
+		io_flush(FULL_FLUSH);
 		report(f_in);
 
-		write_int(recv_pipe[1],1);
-		close(recv_pipe[1]);
-		io_flush();
+		send_msg(MSG_DONE, "", 0);
+		io_flush(FULL_FLUSH);
 		/* finally we go to sleep until our parent kills us
 		 * with a USR2 signal. We sleep for a short time as on
 		 * some OSes a signal won't interrupt a sleep! */
-		while (msleep(20))
-			;
+		while (1)
+			msleep(20);
 	}
 
-	close(recv_pipe[1]);
+	am_generator = 1;
+
 	close(error_pipe[1]);
 	if (f_in != f_out) close(f_in);
 
-	io_start_buffering(f_out);
+	io_start_buffering_out(f_out);
 
-	io_set_error_fd(error_pipe[0]);
+	set_msg_fd_in(error_pipe[0]);
 #endif
 
-	generate_files(f_out,flist,local_name,recv_pipe[0]);
+	generate_files(f_out, flist, local_name);
 
-	read_int(recv_pipe[0]);
-#ifdef DISABLE_FORK
-	dos_close_fd(recv_pipe[0]);
-#else
-	close(recv_pipe[0]);
-#endif
+	get_redo_num(); /* Read final MSG_DONE and any prior messages. */
+	report(-1);
+	io_flush(FULL_FLUSH);
 	if (protocol_version >= 24) {
 		/* send a final goodbye message */
 		write_int(f_out, -1);
 	}
-	io_flush();
+	io_flush(FULL_FLUSH);
 
-	io_set_error_fd(-1);
+	set_msg_fd_in(-1);
 #ifndef DISABLE_FORK
 	kill(pid, SIGUSR2);
 	wait_process(pid, &status);
@@ -564,16 +564,13 @@ static void do_server_recv(int f_in, int f_out, int argc,char *argv[])
 {
 	int status;
 	struct file_list *flist;
-	char *local_name=NULL;
+	char *local_name = NULL;
 	char *dir = NULL;
-	extern int delete_mode;
-	extern int delete_excluded;
-	extern int module_id;
-	extern int read_batch;
-	extern struct file_list *batch_flist;
 
-	if (verbose > 2)
-		rprintf(FINFO,"server_recv(%d) starting pid=%d\n",argc,(int)getpid());
+	if (verbose > 2) {
+		rprintf(FINFO, "server_recv(%d) starting pid=%ld\n",
+			argc, (long)getpid());
+	}
 
 	if (am_daemon && lp_read_only(module_id) && !am_sender) {
 		rprintf(FERROR,"ERROR: module is read only\n");
@@ -586,13 +583,14 @@ static void do_server_recv(int f_in, int f_out, int argc,char *argv[])
 		dir = argv[0];
 		argc--;
 		argv++;
-		if (!am_daemon && !push_dir(dir, 0)) {
+		if (!am_daemon && !push_dir(dir)) {
 			rprintf(FERROR, "push_dir %s failed: %s (4)\n",
 				full_fname(dir), strerror(errno));
 			exit_cleanup(RERR_FILESELECT);
 		}
 	}
 
+	io_start_buffering_in(f_in);
 	if (delete_mode && !delete_excluded)
 		recv_exclude_list(f_in);
 
@@ -636,9 +634,6 @@ int child_main(int argc, char *argv[])
 
 void start_server(int f_in, int f_out, int argc, char *argv[])
 {
-	extern int cvs_exclude;
-	extern int read_batch;
-
 	setup_protocol(f_out, f_in);
 
 	set_nonblocking(f_in);
@@ -671,10 +666,6 @@ int client_run(int f_in, int f_out, pid_t pid, int argc, char *argv[])
 	struct file_list *flist = NULL;
 	int status = 0, status2 = 0;
 	char *local_name = NULL;
-	extern pid_t cleanup_child_pid;
-	extern int write_batch;
-	extern int read_batch;
-	extern struct file_list *batch_flist;
 
 	cleanup_child_pid = pid;
 	if (read_batch)
@@ -689,21 +680,21 @@ int client_run(int f_in, int f_out, pid_t pid, int argc, char *argv[])
 		io_start_multiplex_in(f_in);
 
 	if (am_sender) {
-		extern int cvs_exclude;
-		extern int delete_mode;
-		extern int delete_excluded;
+		io_start_buffering_out(f_out);
 		if (cvs_exclude)
 			add_cvs_excludes();
 		if (delete_mode && !delete_excluded)
 			send_exclude_list(f_out);
 		if (remote_filesfrom_file)
 			filesfrom_fd = f_in;
-		if (!read_batch) /*  dw -- don't write to pipe */
+		if (!read_batch) /* don't write to pipe */
 			flist = send_file_list(f_out,argc,argv);
 		if (verbose > 3)
 			rprintf(FINFO,"file list sent\n");
 
+		io_flush(NORMAL_FLUSH);
 		send_files(flist,f_out,f_in);
+		io_flush(FULL_FLUSH);
 		if (protocol_version >= 24) {
 			/* final goodbye message */
 			read_int(f_in);
@@ -712,16 +703,16 @@ int client_run(int f_in, int f_out, pid_t pid, int argc, char *argv[])
 		if (pid != -1) {
 			if (verbose > 3)
 				rprintf(FINFO,"client_run waiting on %d\n", (int) pid);
-			io_flush();
+			io_flush(FULL_FLUSH);
 			wait_process(pid, &status);
 		}
 #endif
 		report(-1);
+		io_flush(FULL_FLUSH);
 		exit_cleanup(status);
 	}
 
 	if (argc == 0) {
-		extern int list_only;
 		list_only = 1;
 	}
 
@@ -760,7 +751,7 @@ int client_run(int f_in, int f_out, pid_t pid, int argc, char *argv[])
 	if (pid != -1) {
 		if (verbose > 3)
 			rprintf(FINFO,"client_run2 waiting on %d\n", (int) pid);
-		io_flush();
+		io_flush(FULL_FLUSH);
 		wait_process(pid, &status);
 	}
 #endif
@@ -805,11 +796,6 @@ static int start_client(int argc, char *argv[])
 	pid_t pid;
 	int f_in,f_out;
 #endif
-	extern int local_server;
-	extern char *shell_cmd;
-	extern int rsync_port;
-	extern int daemon_over_rsh;
-	extern int read_batch;
 #ifndef MSDOS
 	int rc;
 
@@ -940,7 +926,7 @@ static int start_client(int argc, char *argv[])
 	}
 
 	if (shell_machine) {
-		p = strchr(shell_machine,'@');
+		p = strrchr(shell_machine,'@');
 		if (p) {
 			*p = 0;
 			shell_user = shell_machine;
@@ -962,7 +948,6 @@ static int start_client(int argc, char *argv[])
 	}
 
 	if (argc == 0 && !am_sender) {
-		extern int list_only;
 		list_only = 1;
 	}
 
@@ -1003,7 +988,6 @@ static RETSIGTYPE sigusr1_handler(UNUSED(int val))
 
 static RETSIGTYPE sigusr2_handler(UNUSED(int val))
 {
-	extern int log_got_error;
 	if (log_got_error) _exit(RERR_PARTIAL);
 	_exit(0);
 }
@@ -1087,11 +1071,7 @@ static RETSIGTYPE rsync_panic_handler(UNUSED(int whatsig))
 
 int main(int argc,char *argv[])
 {
-	extern int am_root;
-	extern int orig_umask;
-	extern int dry_run;
 	int ret;
-	extern int write_batch;
 	int orig_argc;
 	char **orig_argv;
 
@@ -1111,7 +1091,7 @@ int main(int argc,char *argv[])
 #endif
 
 	starttime = time(NULL);
-	am_root = (getuid() == 0);
+	am_root = (MY_UID() == 0);
 
 	memset(&stats, 0, sizeof(stats));
 
@@ -1147,7 +1127,9 @@ int main(int argc,char *argv[])
 	 * (implemented by forking "pwd" and reading its output) doesn't
 	 * work when there are other child processes.  Also, on all systems
 	 * that implement getcwd that way "pwd" can't be found after chroot. */
-	push_dir(NULL,0);
+	push_dir(NULL);
+
+	init_flist();
 
 	if (write_batch && !am_server) {
 		write_batch_argvs_file(orig_argc, orig_argv);
@@ -1165,13 +1147,6 @@ int main(int argc,char *argv[])
 
 	if (dry_run)
 		verbose = MAX(verbose,1);
-
-#ifndef SUPPORT_LINKS
-	if (!am_server && preserve_links) {
-		rprintf(FERROR,"ERROR: symbolic links not supported\n");
-		exit_cleanup(RERR_UNSUPPORTED);
-	}
-#endif
 
 #ifndef DISABLE_SERVER
 	if (am_server) {

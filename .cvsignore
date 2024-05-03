@@ -1,6 +1,6 @@
 ID
 Makefile
-autom4te.cache
+autom4te*.cache
 confdefs.h
 config.cache
 config.h
@@ -21,4 +21,3 @@ tls
 trimslash
 t_unsafe
 wildtest
-zlib/dummy

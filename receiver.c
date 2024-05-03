@@ -23,13 +23,15 @@
 extern int verbose;
 extern int recurse;
 extern int delete_mode;
-extern int protocol_version;
+extern int delete_after;
+extern int max_delete;
 extern int csum_length;
 extern struct stats stats;
 extern int dry_run;
 extern int am_server;
 extern int relative_paths;
 extern int preserve_hard_links;
+extern int preserve_perms;
 extern int cvs_exclude;
 extern int io_error;
 extern char *tmpdir;
@@ -39,49 +41,10 @@ extern int do_progress;
 extern char *backup_dir;
 extern char *backup_suffix;
 extern int backup_suffix_len;
-
-static struct delete_list {
-	DEV64_T dev;
-	INO64_T inode;
-} *delete_list;
-static int dlist_len, dlist_alloc_len;
-
-/* yuck! This function wouldn't have been necessary if I had the sorting
- * algorithm right. Unfortunately fixing the sorting algorithm would introduce
- * a backward incompatibility as file list indexes are sent over the link.
- */
-static int delete_already_done(struct file_list *flist,int j)
-{
-	int i;
-	STRUCT_STAT st;
-
-	if (link_stat(f_name(flist->files[j]), &st)) return 1;
-
-	for (i = 0; i < dlist_len; i++) {
-		if (st.st_ino == delete_list[i].inode &&
-		    (DEV64_T)st.st_dev == delete_list[i].dev)
-			return 1;
-	}
-
-	return 0;
-}
-
-static void add_delete_entry(struct file_struct *file)
-{
-	if (dlist_len == dlist_alloc_len) {
-		dlist_alloc_len += 1024;
-		delete_list = realloc_array(delete_list, struct delete_list,
-					    dlist_alloc_len);
-		if (!delete_list) out_of_memory("add_delete_entry");
-	}
-
-	delete_list[dlist_len].dev = file->dev;
-	delete_list[dlist_len].inode = file->inode;
-	dlist_len++;
-
-	if (verbose > 3)
-		rprintf(FINFO,"added %s to delete list\n", f_name(file));
-}
+extern int cleanup_got_literal;
+extern int module_id;
+extern int ignore_errors;
+extern int orig_umask;
 
 static void delete_one(char *fn, int is_dir)
 {
@@ -112,17 +75,13 @@ static int is_backup_file(char *fn)
 }
 
 
-/* this deletes any files on the receiving side that are not present
- * on the sending side. For version 1.6.4 I have changed the behaviour
- * to match more closely what most people seem to expect of this option */
+/* This deletes any files on the receiving side that are not present
+ * on the sending side. */
 void delete_files(struct file_list *flist)
 {
 	struct file_list *local_file_list;
 	int i, j;
-	char *name;
-	extern int module_id;
-	extern int ignore_errors;
-	extern int max_delete;
+	char *argv[1], fbuf[MAXPATHLEN];
 	static int deletion_count;
 
 	if (cvs_exclude)
@@ -133,30 +92,25 @@ void delete_files(struct file_list *flist)
 		return;
 	}
 
-	for (j=0;j<flist->count;j++) {
-		if (!S_ISDIR(flist->files[j]->mode) ||
-		    !(flist->files[j]->flags & FLAG_DELETE)) continue;
-
-		if (protocol_version < 19 &&
-		    delete_already_done(flist, j)) continue;
-
-		name = strdup(f_name(flist->files[j]));
-
-		if (!(local_file_list = send_file_list(-1,1,&name))) {
-			free(name);
+	for (j = 0; j < flist->count; j++) {
+		if (!(flist->files[j]->flags & FLAG_TOP_DIR)
+		    || !S_ISDIR(flist->files[j]->mode))
 			continue;
-		}
+
+		argv[0] = f_name_to(flist->files[j], fbuf);
+
+		if (!(local_file_list = send_file_list(-1, 1, argv)))
+			continue;
 
 		if (verbose > 1)
-			rprintf(FINFO,"deleting in %s\n", name);
+			rprintf(FINFO, "deleting in %s\n", fbuf);
 
-		for (i=local_file_list->count-1;i>=0;i--) {
-			if (max_delete && deletion_count > max_delete) break;
-			if (!local_file_list->files[i]->basename) continue;
-			if (protocol_version < 19 &&
-			    S_ISDIR(local_file_list->files[i]->mode))
-				add_delete_entry(local_file_list->files[i]);
-			if (-1 == flist_find(flist,local_file_list->files[i])) {
+		for (i = local_file_list->count-1; i >= 0; i--) {
+			if (max_delete && deletion_count > max_delete)
+				break;
+			if (!local_file_list->files[i]->basename)
+				continue;
+			if (flist_find(flist,local_file_list->files[i]) < 0) {
 				char *f = f_name(local_file_list->files[i]);
 				if (make_backups && (backup_dir || !is_backup_file(f))) {
 					(void) make_backup(f);
@@ -170,7 +124,6 @@ void delete_files(struct file_list *flist)
 			}
 		}
 		flist_free(local_file_list);
-		free(name);
 	}
 }
 
@@ -205,8 +158,8 @@ static int get_tmpname(char *fnametmp, char *fname)
 #endif
 
 	if (tmpdir) {
-		strlcpy(fnametmp, tmpdir, MAXPATHLEN - 2);
-		length = strlen(fnametmp);
+		/* Note: this can't overflow, so the return value is safe */
+		length = strlcpy(fnametmp, tmpdir, MAXPATHLEN - 2);
 #ifdef MSDOS
 		fnametmp[length++] = '\\';
 #else
@@ -226,9 +179,8 @@ static int get_tmpname(char *fnametmp, char *fname)
 			/* copy up to and including the slash */
 			strlcpy(fnametmp, fname, length + 1);
 		}
-	} else {
+	} else
 		f = fname;
-	}
 #ifdef MSDOS
 	fnametmp[length] = '\0';		/* always NULL terminated */
 	strcat(fnametmp + length, "_RXXXXXX");
@@ -252,7 +204,7 @@ static int get_tmpname(char *fnametmp, char *fname)
 }
 
 
-static int receive_data(int f_in,struct map_struct *buf,int fd,char *fname,
+static int receive_data(int f_in,struct map_struct *mapbuf,int fd,char *fname,
 			OFF_T total_size)
 {
 #if SIZEOF_INT == 2
@@ -277,13 +229,11 @@ static int receive_data(int f_in,struct map_struct *buf,int fd,char *fname,
 
 	sum_init();
 
-	for (i=recv_token(f_in,&data); i != 0; i=recv_token(f_in,&data)) {
+	while ((i = recv_token(f_in, &data)) != 0) {
 		if (do_progress)
 			show_progress(offset, total_size);
 
 		if (i > 0) {
-			extern int cleanup_got_literal;
-
 			if (verbose > 3) {
 				rprintf(FINFO,"data recv %d at %.0f\n",
 					i,(double)offset);
@@ -319,8 +269,8 @@ static int receive_data(int f_in,struct map_struct *buf,int fd,char *fname,
 #endif
 				i,len,(double)offset2,(double)offset);
 
-		if (buf) {
-			map = map_ptr(buf,offset2,len);
+		if (mapbuf) {
+			map = map_ptr(mapbuf,offset2,len);
 
 			see_token(map, len);
 			sum_update(map,len);
@@ -333,6 +283,8 @@ static int receive_data(int f_in,struct map_struct *buf,int fd,char *fname,
 		}
 		offset += len;
 	}
+
+	flush_write_file(fd);
 
 	if (do_progress)
 		end_progress(total_size);
@@ -360,28 +312,29 @@ static int receive_data(int f_in,struct map_struct *buf,int fd,char *fname,
  * main routine for receiver process.
  *
  * Receiver process runs on the same host as the generator process. */
-int recv_files(int f_in,struct file_list *flist,char *local_name,int f_gen)
+int recv_files(int f_in,struct file_list *flist,char *local_name)
 {
 	int fd1,fd2;
 	STRUCT_STAT st;
-	char *fname;
+	char *fname, fbuf[MAXPATHLEN];
 	char template[MAXPATHLEN];
 	char fnametmp[MAXPATHLEN];
 	char *fnamecmp;
 	char fnamecmpbuf[MAXPATHLEN];
-	struct map_struct *buf;
+	struct map_struct *mapbuf;
 	int i;
 	struct file_struct *file;
 	int phase=0;
 	int recv_ok;
-	extern struct stats stats;
-	extern int preserve_perms;
-	extern int delete_after;
-	extern int orig_umask;
 	struct stats initial_stats;
 
 	if (verbose > 2) {
 		rprintf(FINFO,"recv_files(%d) starting\n",flist->count);
+	}
+
+	if (flist->hlink_pool) {
+		pool_destroy(flist->hlink_pool);
+		flist->hlink_pool = NULL;
 	}
 
 	while (1) {
@@ -391,12 +344,12 @@ int recv_files(int f_in,struct file_list *flist,char *local_name,int f_gen)
 
 		i = read_int(f_in);
 		if (i == -1) {
-			if (phase==0) {
+			if (phase == 0) {
 				phase++;
 				csum_length = SUM_LENGTH;
 				if (verbose > 2)
 					rprintf(FINFO,"recv_files phase=%d\n",phase);
-				write_int(f_gen,-1);
+				send_msg(MSG_DONE, "", 0);
 				continue;
 			}
 			break;
@@ -409,13 +362,16 @@ int recv_files(int f_in,struct file_list *flist,char *local_name,int f_gen)
 		}
 
 		file = flist->files[i];
-		fname = f_name(file);
 
+		stats.current_file_index = i;
 		stats.num_transferred_files++;
 		stats.total_transferred_size += file->length;
+		cleanup_got_literal = 0;
 
 		if (local_name)
 			fname = local_name;
+		else
+			fname = f_name_to(file, fbuf);
 
 		if (dry_run) {
 			if (!am_server && verbose) {	/* log transfer */
@@ -434,10 +390,10 @@ int recv_files(int f_in,struct file_list *flist,char *local_name,int f_gen)
 		/* open the file */
 		fd1 = do_open(fnamecmp, O_RDONLY, 0);
 
-		if ((fd1 == -1) && (compare_dest != NULL)) {
+		if (fd1 == -1 && compare_dest != NULL) {
 			/* try the file at compare_dest instead */
-			snprintf(fnamecmpbuf,MAXPATHLEN,"%s/%s",
-						compare_dest,fname);
+			pathjoin(fnamecmpbuf, sizeof fnamecmpbuf,
+				 compare_dest, fname);
 			fnamecmp = fnamecmpbuf;
 			fd1 = do_open(fnamecmp, O_RDONLY, 0);
 		}
@@ -466,7 +422,7 @@ int recv_files(int f_in,struct file_list *flist,char *local_name,int f_gen)
 		if (fd1 != -1 && !S_ISREG(st.st_mode)) {
 			close(fd1);
 			fd1 = -1;
-			buf = NULL;
+			mapbuf = NULL;
 		}
 
 		if (fd1 != -1 && !preserve_perms) {
@@ -481,20 +437,19 @@ int recv_files(int f_in,struct file_list *flist,char *local_name,int f_gen)
 		}
 
 		if (fd1 != -1 && st.st_size > 0) {
-			buf = map_file(fd1,st.st_size);
+			mapbuf = map_file(fd1,st.st_size);
 			if (verbose > 2)
 				rprintf(FINFO,"recv mapped %s of size %.0f\n",fnamecmp,(double)st.st_size);
-		} else {
-			buf = NULL;
-		}
+		} else
+			mapbuf = NULL;
 
 		if (!get_tmpname(fnametmp,fname)) {
-			if (buf) unmap_file(buf);
+			if (mapbuf) unmap_file(mapbuf);
 			if (fd1 != -1) close(fd1);
 			continue;
 		}
 
-		strlcpy(template, fnametmp, sizeof(template));
+		strlcpy(template, fnametmp, sizeof template);
 
 		/* we initially set the perms without the
 		 * setuid/setgid bits to ensure that there is no race
@@ -509,30 +464,30 @@ int recv_files(int f_in,struct file_list *flist,char *local_name,int f_gen)
 		 * transferred, but that may not be the case with -R */
 		if (fd2 == -1 && relative_paths && errno == ENOENT &&
 		    create_directory_path(fnametmp, orig_umask) == 0) {
-			strlcpy(fnametmp, template, sizeof(fnametmp));
+			strlcpy(fnametmp, template, sizeof fnametmp);
 			fd2 = do_mkstemp(fnametmp, file->mode & INITACCESSPERMS);
 		}
 		if (fd2 == -1) {
 			rprintf(FERROR, "mkstemp %s failed: %s\n",
 				full_fname(fnametmp), strerror(errno));
-			receive_data(f_in,buf,-1,NULL,file->length);
-			if (buf) unmap_file(buf);
+			receive_data(f_in,mapbuf,-1,NULL,file->length);
+			if (mapbuf) unmap_file(mapbuf);
 			if (fd1 != -1) close(fd1);
 			continue;
 		}
 
-		cleanup_set(fnametmp, fname, file, buf, fd1, fd2);
+		cleanup_set(fnametmp, fname, file, mapbuf, fd1, fd2);
 
 		if (!am_server && verbose) {	/* log transfer */
 			rprintf(FINFO, "%s\n", fname);
 		}
 
 		/* recv file data */
-		recv_ok = receive_data(f_in,buf,fd2,fname,file->length);
+		recv_ok = receive_data(f_in,mapbuf,fd2,fname,file->length);
 
 		log_recv(file, &initial_stats);
 
-		if (buf) unmap_file(buf);
+		if (mapbuf) unmap_file(mapbuf);
 		if (fd1 != -1) {
 			close(fd1);
 		}
@@ -550,34 +505,22 @@ int recv_files(int f_in,struct file_list *flist,char *local_name,int f_gen)
 				rprintf(FERROR,"ERROR: file corruption in %s. File changed during transfer?\n",
 					full_fname(fname));
 			} else {
+				char buf[4];
 				if (verbose > 1)
 					rprintf(FINFO,"redoing %s(%d)\n",fname,i);
-				write_int(f_gen,i);
+				SIVAL(buf, 0, i);
+				send_msg(MSG_REDO, buf, 4);
 				coroutine_yield();
 			}
 		}
 	}
 
-	if (delete_after) {
-		if (recurse && delete_mode && !local_name && flist->count>0) {
-			delete_files(flist);
-		}
-	}
-
-	if (preserve_hard_links)
-		do_hard_links();
-
-	/* now we need to fix any directory permissions that were
-	 * modified during the transfer */
-	for (i = 0; i < flist->count; i++) {
-		file = flist->files[i];
-		if (!file->basename || !S_ISDIR(file->mode)) continue;
-		recv_generator(local_name?local_name:f_name(file),flist,i,-1);
-	}
+	if (delete_after && recurse && delete_mode && !local_name
+	    && flist->count > 0)
+		delete_files(flist);
 
 	if (verbose > 2)
 		rprintf(FINFO,"recv_files finished\n");
 
 	return 0;
 }
-

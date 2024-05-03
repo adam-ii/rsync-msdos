@@ -1,134 +1,190 @@
-NEWS for rsync 2.6.0 (1 Jan 2004)
-Protocol: 27 (changed)
-Changes since 2.5.7:
+NEWS for rsync 2.6.1 (26 Apr 2004)
+Protocol: 28 (changed)
+Changes since 2.6.0:
+
+  SECURITY FIXES:
+
+    - Paths sent to an rsync daemon are more thoroughly sanitized when
+      chroot is not used.  If you're running a non-read-only rsync
+      daemon with chroot disabled, *please upgrade*, ESPECIALLY if the
+      user privs you run rsync under is anything above "nobody".
 
   ENHANCEMENTS:
 
-    * "ssh" is now the default remote shell for rsync.  If you want to
-      change this, configure like this:  "./configure --with-rsh=rsh".
+    - Lower memory use, more optimal transfer of data over the socket,
+      and lower CPU usage (see the INTERNAL section for details).
 
-    * Added --files-from, --no-relative, --no-implied-dirs, and --from0.
-      Note that --from0 affects the line-ending character for all the
-      files read by the --*-from options. (Wayne Davison)
+    - The RSYNC_PROXY environment variable can now contain a
+      "USER:PASS@" prefix before the "HOST:PORT" information.
+      (Bardur Arantsson)
 
-    * Length of csum2 is now per-file starting with protocol version
-      27. (J.W. Schultz)
+    - The --progress output now mentions how far along in the transfer
+      we are, including both a count of files transferred and a
+      percentage of the total file-count that we've processed.  It also
+      shows better current-rate-of-transfer and remaining-transfer-time
+      values.
 
-    * Per-file dynamic block size is now sqrt(file length).  The
-      per-file checksum size is determined according to an algorithm
-      provided by Donovan Baarda which reduces the probability of rsync
-      algorithm corrupting data and falling back using the whole md4
-      checksums. (J.W. Schultz, Donovan Baarda)
+    - The configure script now accepts --with-rsyncd-conf=PATH to
+      override the default value of the /etc/rsyncd.conf file.
 
-    * The --stats option no longer includes the (debug) malloc summary
-      unless the verbose option was specified at least twice.
+    - Added a couple extra diffs in the "patches" dir, removed the ones
+      that got applied, and rebuilt the rest.
 
-    * Added a new error/warning code for when files vanish from the
-      sending side.  Made vanished source files not interfere with the
-      file-deletion pass when --delete-after was specified.
-
-    * Various trailing-info sections are now preceded by a newline.
+    - Documentation changes now attempt to describe some often mis-
+      understood features more clearly.
 
   BUG FIXES:
 
-    * Fixed several exclude/include matching bugs when using wild-cards.
-      This has a several user-visible effects, all of which make the
-      matching more consistent and intuitive.  This should hopefully not
-      cause anyone problems since it makes the matching work more like
-      what people are expecting. (Wayne Davison)
+    - When -x (--one-file-system) is combined with -L (--copy-links) or
+      --copy-unsafe-links, no symlinked files are skipped, even if the
+      referent file is on a different filesystem.
 
-      - A pattern with a "**" no longer causes a "*" to match slashes.
-        For example, with "/*/foo/**", "foo" must be 2 levels deep.
+    - The --link-dest code now works properly for a non-root user when
+      (1) the UIDs of the source and destination differ and -o was
+      specified, or (2) when the group of the source can't be used on
+      the destination and -g was specified.
 
-      - "**/foo" now matches at the base of the transfer (i.e. /foo).
+    - Fixed a bug in the handling of -H (hard-links) that might cause
+      the expanded PATH/NAME value of the current item to get
+      overwritten (due to an expanded-name caching bug).
+      
+    - We now reset the "new data has been sent" flag at the start of
+      each file we send.  This makes sure that an interrupted transfer
+      with the --partial option set doesn't keep a shorter temp file
+      than the current basis file when no new data has been transfered
+      over the wire for that file.
 
-      - An non-anchored wildcard term floats to match beyond the base of
-        the transfer.  E.g. "CVS/R*" matches at the end of the path,
-        just like the non-wildcard term "CVS/Root" does.
+    - Fixed a byte-order problem in --batch-mode on big-endian machines.
+      (Jay Fenlason)
 
-      - Including a "**" in the match term causes it to be matched
-        against the entire path, not just the name portion, even if
-        there aren't any interior slashes in the term.  E.g. "foo**bar"
-        would exclude "/path/foo-bar" (just like before) as well as
-        "/foo-path/baz-bar" (unlike before).
+    - Fixed configure bug when running "./configure --disable-ipv6".
 
-    * The exclude list specified in the daemon's config file is now
-      properly applied to the pulled items no matter how deep the
-      user's file-args are in the source tree.  (Wayne Davison)
+    - Fixed "make test" bug when build dir is not the source dir.
 
-    * For protocol version >= 27, mdfour_tail() is called when the
-      block size (including checksum_seed) is a multiple of 64.
-      Previously it was not called, giving the wrong MD4 checksum.
-      (Craig Barratt)
+    - When using --cvs-exclude, the exclude items we get from a
+      per-directory's .cvsignore file once again only affect that one
+      directory (not all following directories too).  The items are also
+      now properly word-split and parsed without any +/- prefix parsing.
 
-    * For protocol version >= 27, a 64 bit bit counter is used in
-      mdfour.c as required by the RFC.  Previously only a 32 bit bit
-      counter was used, causing incorrect MD4 file checksums for
-      file sizes >= 512MB - 4.  (Craig Barratt)
+    - When specifying the USER@HOST: prefix for a file, the USER part
+      can now contain an '@', if needed (i.e. the last '@' is used to
+      find the HOST, not the first).
 
-    * Fixed a crash bug when interacting with older rsync versions and
-      multiple files of the same name are destined for the same dir.
-      (Wayne Davison)
+    - Fixed some bugs in the handling of group IDs for non-root users:
+      (1) It properly handles a group that the sender didn't have a name
+      for (it would previously skip changing the group on any files in
+      that group).  (2) If --numeric-ids is used, rsync no longer
+      attempts to set groups that the user doesn't have the permission
+      to set.
 
-    * Keep tmp names from overflowing MAXPATHLEN.
+    - Fixed the "refuse options" setting in the rsyncd.conf file.
 
-    * Make --link-dest honor the absence of -p, -o, and -g.
+    - Improved the -x (--one-file-system) flag's handling of any mount-
+      point directories we encounter.  It is both more optimal (in that
+      it no longer does a useless scan of the contents of the mount-
+      point dirs) and also fixes a bug where a remapped mount of the
+      original filesystem could get discovered in a subdir we should be
+      ignoring.
 
-    * Made rsync treat a trailing slash in the destination in a more
-      consistent manner.
+    - Rsync no longer discards a double-slash at the start of a filename
+      when trying to open the file.  It also no longer constructs names
+      that start with a double slash (unless the user supplied them).
 
-    * Fixed file I/O error detection.  (John Van Essen)
+    - Path-specifying options to a daemon should now work the same with
+      or without chroot turned on.  Previously, such a option (such as
+      --link-dest) would get its absolute path munged into a relative
+      one if chroot was not on, making that setting fairly useless.
+      Rsync now transforms the path into one that is based on the
+      module's base dir when chroot is not enabled.
 
-    * Fixed bogus "malformed address {hostname}" message in rsyncd log
-      when checking IP address against hostnames from "hosts allow"
-      and "hosts deny" parameters in config file.
+    - Fixed compilation problem on Tru64 Unix (having to do with
+      sockaddr.sa_len and sockaddr.sin_len).
 
-    * Print heap statistics when verbose >= 2 instead of when >= 1.
+    - Fixed a compatibility problem interacting with older rsync
+      versions that might send us an empty --suffix value without
+      telling us that --backup-dir was specified.
 
-    * Fixed a compression (-z) bug when syncing a mostly-matching file
-      that contains already-compressed data.  (Yasuoka Masahiko and
-      Wayne Davison)
+    - The "hosts allow" option for a daemon-over-remote-shell process
+      now has improved support for IPv6 addresses and a fix for systems
+      that have a length field in their socket structs.
 
-    * Fixed a bug in the --backup code that could cause deleted files
-      to not get backed up.
-
-    * When the backup code makes new directories, create them with mode
-      0700 instead of 0755 (since the directory permissions in the
-      backup tree are not yet copied from the main tree).
-
-    * Call setgroups() in a more portable manner.
-
-    * Improved file-related error messages to better indicate exactly
-      what pathname failed. (Wayne Davison)
-
-    * Fixed some bugs in the handling of --delete and --exclude when
-      using the --relative (-R) option. (Wayne Davison)
-
-    * Fixed bug that prevented regular files from replacing
-      special files and caused a directory in --link-dest or
-      --compare-dest to block the creation of a file with the
-      same path.  A directory still cannot be replaced by a
-      regular file unless --delete specified.  (J.W. Schultz)
-
-    * Detect and report when open or opendir succeed but read and
-      readdir fail caused by network filesystems issues and truncated
-      files.  (David Norwood, Michael Brown, J.W. Schultz)
-
-    * Added a fix that should give ssh time to restore the tty settings
-      if the user presses Ctrl-C at an ssh password prompt.
+    - Fixed the ability to request an empty backup --suffix when sending
+      files to an rsync daemon.
 
   INTERNAL:
 
-    * Eliminated vestigial support for old versions that we stopped
-      supporting. (J.W. Schultz)
+    - Most of the I/O is now buffered, which results in a pretty large
+      speedup when running under MS Windows.  (Craig Barratt)
 
-    * Simplified some of the option-parsing code. (Wayne Davison)
+    - Optimizations to the name-handling/comparing code have made some
+      significant reductions in user-CPU time for large file sets.
 
-    * Some cleanup made to the exclude code, as well as some new
-      defines added to enhance readability. (Wayne Davison)
+    - Some cleanup of the variable types make the code more consistent.
 
-    * Changed the protocol-version code so that it can interact at a
-      lower protocol level than the maximum supported by both sides.
-      Added an undocumented option, --protocol=N, to force the value
-      we advertise to the other side (primarily for testing purposes).
-      (Wayne Davison)
+    - Reduced memory requirements of hard link preservation.
+      (J.W. Schultz)
+
+    - Implemented a new algorithm for hard-link handling that speeds up
+      the code significantly.  (J.W. Schultz and Wayne Davison)
+
+    - The --hard-link option now uses the first existing file in the
+      group of linked files as the basis for the transfer.  This
+      prevents the sub-optimal transfer of a file's data when a new
+      hardlink is added on the sending side and it sorts alphabetically
+      earlier in the list than the files that are already present on the
+      receiving side.
+
+    - Dropped support for protocol versions less than 20 (2.3.0 released
+      15 Mar 1999) and activated warnings for protocols less than 25
+      (2.5.0 released 23 Aug 2001). (Wayne Davison and J.W. Schultz,
+      severally)
+
+    - More optimal data transmission for --hard-links (protocol 28).
+
+    - More optimal data transmission for --checksum (protocol 28).
+
+    - Less memory is used when --checksum is specified.
+
+    - Less memory is used in the file list (a per-file savings).
+
+    - The generator is now better about not modifying the file list
+      during the transfer in order to avoid a copy-on-write memory
+      bifurcation (on systems where fork() uses shared memory).
+      Previously, rsync's shared memory would slowly become unshared,
+      resulting in real memory usage nearly doubling on the receiving
+      side by the end of the transfer.  Now, as long as permissions
+      are being preserved, the shared memory should remain that way
+      for the entire transfer.
+
+    - Changed hardlink info and file_struct + strings to use allocation
+      pools.  This reduces memory use for large file-sets and permits
+      freeing memory to the OS.  (J.W. Schultz) 
+
+    - The 2 pipes used between the receiver and generator processes
+      (which are forked on the same machine) were reduced to 1 pipe and
+      the protocol improved so that (1) it is now impossible to have the
+      "redo" pipe fill up and hang rsync, and (2) trailing messages from
+      the receiver don't get lost on their way through the generator
+      over to the sender (which mainly affected hard-link messages and
+      verbose --stats output).
+
+    - Improved the internal uid/gid code to be more portable and a
+      little more optimized.
+
+    - The device numbers sent when using --devices are now sent as
+      separate major/minor values with 32-bit accuracy (protocol 28).
+      Previously, the copied devices were sent as a single 32-bit
+      number.  This will make inter-operation of 64-bit binaries more
+      compatible with their 32-bit brethren (with both ends of the
+      connection are using protocol 28).  Note that optimizations in the
+      binary protocol for sending the device numbers often results in
+      fewer bytes being used than before, even though more precision is
+      now available.
+
+    - Some cleanup of the exclude/include structures and its code made
+      things clearer (internally), simpler, and more efficient.
+
+    - The reading & writing of the file-list in batch-mode is now
+      handled by the same code that sends & receives the list over the
+      wire.  This makes it much easier to maintain.  (Note that the
+      batch code is still considered to be experimental.)

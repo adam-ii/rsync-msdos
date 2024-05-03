@@ -30,6 +30,9 @@ extern int preserve_links;
 extern int am_root;
 extern int preserve_devices;
 extern int preserve_hard_links;
+extern int preserve_perms;
+extern int preserve_uid;
+extern int preserve_gid;
 extern int update_only;
 extern int opt_ignore_existing;
 extern int csum_length;
@@ -38,31 +41,33 @@ extern int size_only;
 extern int io_timeout;
 extern int protocol_version;
 extern int always_checksum;
-extern int modify_window;
 extern char *compare_dest;
 extern int link_dest;
+extern int whole_file;
+extern int local_server;
+extern int write_batch;
+extern int list_only;
+extern int only_existing;
+extern int orig_umask;
+extern int safe_symlinks;
 
 
 /* choose whether to skip a particular file */
-static int skip_file(char *fname,
-		     struct file_struct *file, STRUCT_STAT *st)
+static int skip_file(char *fname, struct file_struct *file, STRUCT_STAT *st)
 {
 	if (st->st_size != file->length) {
 		return 0;
 	}
 	if (link_dest) {
-		extern int preserve_perms;
-		extern int preserve_uid;
-		extern int preserve_gid;
-
-		if(preserve_perms
-		    && (st->st_mode & ~_S_IFMT) !=  (file->mode & ~_S_IFMT))
+		if (preserve_perms
+		    && (st->st_mode & CHMOD_BITS) != (file->mode & CHMOD_BITS))
 			return 0;
 
-		if (preserve_uid && st->st_uid != file->uid)
+		if (am_root && preserve_uid && st->st_uid != file->uid)
 			return 0;
 
-		if (preserve_gid && st->st_gid != file->gid)
+		if (preserve_gid && file->gid != GID_NONE
+		    && st->st_gid != file->gid)
 			return 0;
 	}
 
@@ -74,17 +79,14 @@ static int skip_file(char *fname,
 
 		if (compare_dest != NULL) {
 			if (access(fname, 0) != 0) {
-				snprintf(fnamecmpdest,MAXPATHLEN,"%s/%s",
-					 compare_dest,fname);
+				pathjoin(fnamecmpdest, sizeof fnamecmpdest,
+					 compare_dest, fname);
 				fname = fnamecmpdest;
 			}
 		}
 		file_checksum(fname,sum,st->st_size);
-		if (protocol_version < 21) {
-			return (memcmp(sum,file->sum,2) == 0);
-		} else {
-			return (memcmp(sum,file->sum,MD4_SUM_LENGTH) == 0);
-		}
+		return memcmp(sum, file->u.sum, protocol_version < 21 ? 2
+							: MD4_SUM_LENGTH) == 0;
 	}
 
 	if (size_only) {
@@ -100,14 +102,13 @@ static int skip_file(char *fname,
 
 
 /*
- * 	NULL sum_struct means we have no checksums
+ * NULL sum_struct means we have no checksums
  */
-
 void write_sum_head(int f, struct sum_struct *sum)
 {
 	static struct sum_struct null_sum;
 
-	if (sum == (struct sum_struct *)NULL)
+	if (sum == NULL)
 		sum = &null_sum;
 
 	write_int(f, sum->count);
@@ -137,8 +138,9 @@ void write_sum_head(int f, struct sum_struct *sum)
 
 static void sum_sizes_sqroot(struct sum_struct *sum, uint64 len)
 {
-	extern int block_size;
-	int blength, s2length, b;
+	extern unsigned int block_size;
+	unsigned int blength;
+	int s2length;
 	uint32 c;
 	uint64 l;
 
@@ -167,7 +169,7 @@ static void sum_sizes_sqroot(struct sum_struct *sum, uint64 len)
 	} else if (csum_length == SUM_LENGTH) {
 		s2length = SUM_LENGTH;
 	} else {
-		b = BLOCKSUM_BIAS;
+		int b = BLOCKSUM_BIAS;
 		l = len;
 		while (l >>= 1) {
 			b += 2;
@@ -192,10 +194,9 @@ static void sum_sizes_sqroot(struct sum_struct *sum, uint64 len)
 	sum->remainder	= (len % blength);
 
 	if (sum->count && verbose > 2) {
-		rprintf(FINFO, "count=%ld rem=%ld blength=%ld s2length=%ld flength=%.0f\n",
-			(long) sum->count, (long) sum->remainder,
-			(long) sum->blength, (long) sum->s2length,
-			(double) sum->flength);
+		rprintf(FINFO, "count=%.0f rem=%u blength=%u s2length=%d flength=%.0f\n",
+			(double)sum->count, sum->remainder, sum->blength,
+			sum->s2length, (double)sum->flength);
 	}
 }
 
@@ -210,10 +211,6 @@ static void sum_sizes_sqroot(struct sum_struct *sum, uint64 len)
  * Whew. */
 static BOOL disable_deltas_p(void)
 {
-	extern int whole_file;
-	extern int local_server;
-	extern int write_batch;
-
 	if (whole_file > 0)
 		return True;
 	if (whole_file == 0 || write_batch)
@@ -227,7 +224,7 @@ static BOOL disable_deltas_p(void)
  *
  * Generate approximately one checksum every block_len bytes.
  */
-static void generate_and_send_sums(struct map_struct *buf, OFF_T len, int f_out)
+static void generate_and_send_sums(struct map_struct *buf, size_t len, int f_out)
 {
 	size_t i;
 	struct sum_struct sum;
@@ -238,7 +235,7 @@ static void generate_and_send_sums(struct map_struct *buf, OFF_T len, int f_out)
 	write_sum_head(f_out, &sum);
 
 	for (i = 0; i < sum.count; i++) {
-		int n1 = MIN(len, sum.blength);
+		unsigned int n1 = MIN(len, sum.blength);
 		char *map = map_ptr(buf, offset, n1);
 		uint32 sum1 = get_checksum1(map, n1);
 		char sum2[SUM_LENGTH];
@@ -247,8 +244,9 @@ static void generate_and_send_sums(struct map_struct *buf, OFF_T len, int f_out)
 
 		if (verbose > 3) {
 			rprintf(FINFO,
-				"chunk[%ld] offset=%.0f len=%d sum1=%08lx\n",
-				(long)i,(double)offset,n1,(unsigned long)sum1);
+				"chunk[%.0f] offset=%.0f len=%u sum1=%08lx\n",
+				(double)i, (double)offset, n1,
+				(unsigned long)sum1);
 		}
 		write_int(f_out, sum1);
 		write_buf(f_out, sum2, sum.s2length);
@@ -267,22 +265,17 @@ static void generate_and_send_sums(struct map_struct *buf, OFF_T len, int f_out)
  * @note This comment was added later by mbp who was trying to work it
  * out.  It might be wrong.
  **/
-void recv_generator(char *fname, struct file_list *flist, int i, int f_out)
+void recv_generator(char *fname, struct file_struct *file, int i, int f_out)
 {
 	int fd;
 	STRUCT_STAT st;
-	struct map_struct *buf;
+	struct map_struct *mapbuf;
 	int statret;
-	struct file_struct *file = flist->files[i];
 	char *fnamecmp;
 	char fnamecmpbuf[MAXPATHLEN];
-	extern char *compare_dest;
-	extern int list_only;
-	extern int preserve_perms;
-	extern int only_existing;
-	extern int orig_umask;
 
-	if (list_only) return;
+	if (list_only)
+		return;
 
 	if (verbose > 2)
 		rprintf(FINFO,"recv_generator(%s,%d)\n",fname,i);
@@ -301,7 +294,8 @@ void recv_generator(char *fname, struct file_list *flist, int i, int f_out)
 		/* if the file exists already and we aren't perserving
 		 * permissions then act as though the remote end sent
 		 * us the file permissions we already have */
-		file->mode = (file->mode & _S_IFMT) | (st.st_mode & ~_S_IFMT);
+		file->mode = (file->mode & ~CHMOD_BITS)
+			   | (st.st_mode & CHMOD_BITS);
 	}
 
 	if (S_ISDIR(file->mode)) {
@@ -340,12 +334,11 @@ void recv_generator(char *fname, struct file_list *flist, int i, int f_out)
 #if SUPPORT_LINKS
 		char lnk[MAXPATHLEN];
 		int l;
-		extern int safe_symlinks;
 
-		if (safe_symlinks && unsafe_symlink(file->link, fname)) {
+		if (safe_symlinks && unsafe_symlink(file->u.link, fname)) {
 			if (verbose) {
 				rprintf(FINFO, "ignoring unsafe symlink %s -> \"%s\"\n",
-					full_fname(fname), file->link);
+					full_fname(fname), file->u.link);
 			}
 			return;
 		}
@@ -356,7 +349,7 @@ void recv_generator(char *fname, struct file_list *flist, int i, int f_out)
 				/* A link already pointing to the
 				 * right place -- no further action
 				 * required. */
-				if (strcmp(lnk,file->link) == 0) {
+				if (strcmp(lnk,file->u.link) == 0) {
 					set_perms(fname,file,&st,1);
 					return;
 				}
@@ -366,13 +359,13 @@ void recv_generator(char *fname, struct file_list *flist, int i, int f_out)
 			 * in place. */
 			delete_file(fname);
 		}
-		if (do_symlink(file->link,fname) != 0) {
+		if (do_symlink(file->u.link,fname) != 0) {
 			rprintf(FERROR, "symlink %s -> \"%s\" failed: %s\n",
-				full_fname(fname), file->link, strerror(errno));
+				full_fname(fname), file->u.link, strerror(errno));
 		} else {
 			set_perms(fname,file,NULL,0);
 			if (verbose) {
-				rprintf(FINFO,"%s -> %s\n", fname,file->link);
+				rprintf(FINFO,"%s -> %s\n", fname,file->u.link);
 			}
 		}
 #endif
@@ -383,12 +376,12 @@ void recv_generator(char *fname, struct file_list *flist, int i, int f_out)
 	if (am_root && preserve_devices && IS_DEVICE(file->mode)) {
 		if (statret != 0 ||
 		    st.st_mode != file->mode ||
-		    (DEV64_T)st.st_rdev != file->rdev) {
+		    st.st_rdev != file->u.rdev) {
 			delete_file(fname);
 			if (verbose > 2)
 				rprintf(FINFO,"mknod(%s,0%o,0x%x)\n",
-					fname,(int)file->mode,(int)file->rdev);
-			if (do_mknod(fname,file->mode,file->rdev) != 0) {
+					fname,(int)file->mode,(int)file->u.rdev);
+			if (do_mknod(fname,file->mode,file->u.rdev) != 0) {
 				rprintf(FERROR, "mknod %s failed: %s\n",
 					full_fname(fname), strerror(errno));
 			} else {
@@ -403,11 +396,8 @@ void recv_generator(char *fname, struct file_list *flist, int i, int f_out)
 	}
 #endif
 
-	if (preserve_hard_links && check_hard_link(file)) {
-		if (verbose > 1)
-			rprintf(FINFO, "recv_generator: \"%s\" is a hard link\n",f_name(file));
+	if (preserve_hard_links && hard_link_check(file, HL_CHECK_MASTER))
 		return;
-	}
 
 	if (!S_ISREG(file->mode)) {
 		rprintf(FINFO, "skipping non-regular file \"%s\"\n",fname);
@@ -416,10 +406,10 @@ void recv_generator(char *fname, struct file_list *flist, int i, int f_out)
 
 	fnamecmp = fname;
 
-	if ((statret == -1) && (compare_dest != NULL)) {
+	if (statret == -1 && compare_dest != NULL) {
 		/* try the file at compare_dest instead */
 		int saveerrno = errno;
-		snprintf(fnamecmpbuf,MAXPATHLEN,"%s/%s",compare_dest,fname);
+		pathjoin(fnamecmpbuf, sizeof fnamecmpbuf, compare_dest, fname);
 		statret = link_stat(fnamecmpbuf,&st);
 		if (!S_ISREG(st.st_mode))
 			statret = -1;
@@ -428,11 +418,11 @@ void recv_generator(char *fname, struct file_list *flist, int i, int f_out)
 #if HAVE_LINK
 		else if (link_dest && !dry_run) {
 			if (do_link(fnamecmpbuf, fname) != 0) {
-				if (verbose > 0)
+				if (verbose > 0) {
 					rprintf(FINFO,"link %s => %s : %s\n",
-						fnamecmpbuf,
-						fname,
+						fnamecmpbuf, fname,
 						strerror(errno));
+				}
 			}
 			fnamecmp = fnamecmpbuf;
 		}
@@ -442,6 +432,8 @@ void recv_generator(char *fname, struct file_list *flist, int i, int f_out)
 	}
 
 	if (statret == -1) {
+		if (preserve_hard_links && hard_link_check(file, HL_SKIP))
+			return;
 		if (errno == ENOENT) {
 			write_int(f_out,i);
 			if (!dry_run) write_sum_head(f_out, NULL);
@@ -459,6 +451,8 @@ void recv_generator(char *fname, struct file_list *flist, int i, int f_out)
 		}
 
 		/* now pretend the file didn't exist */
+		if (preserve_hard_links && hard_link_check(file, HL_SKIP))
+			return;
 		write_int(f_out,i);
 		if (!dry_run) write_sum_head(f_out, NULL);
 		return;
@@ -500,40 +494,44 @@ void recv_generator(char *fname, struct file_list *flist, int i, int f_out)
 		rprintf(FERROR, "failed to open %s, continuing: %s\n",
 			full_fname(fnamecmp), strerror(errno));
 		/* pretend the file didn't exist */
+		if (preserve_hard_links && hard_link_check(file, HL_SKIP))
+			return;
 		write_int(f_out,i);
 		write_sum_head(f_out, NULL);
 		return;
 	}
 
-	if (st.st_size > 0) {
-		buf = map_file(fd,st.st_size);
-	} else {
-		buf = NULL;
-	}
+	if (st.st_size > 0)
+		mapbuf = map_file(fd,st.st_size);
+	else
+		mapbuf = NULL;
 
-	if (verbose > 3)
-		rprintf(FINFO,"gen mapped %s of size %.0f\n",fnamecmp,(double)st.st_size);
+	if (verbose > 3) {
+		rprintf(FINFO,"gen mapped %s of size %.0f\n", fnamecmp,
+			(double)st.st_size);
+	}
 
 	if (verbose > 2)
 		rprintf(FINFO, "generating and sending sums for %d\n", i);
 
 	write_int(f_out,i);
-	generate_and_send_sums(buf, st.st_size, f_out);
+	generate_and_send_sums(mapbuf, st.st_size, f_out);
 
 	close(fd);
-	if (buf) unmap_file(buf);
+	if (mapbuf) unmap_file(mapbuf);
 }
 
 
-
-void generate_files(int f,struct file_list *flist,char *local_name,int f_recv)
+void generate_files(int f, struct file_list *flist, char *local_name)
 {
 	int i;
 	int phase=0;
+	char fbuf[MAXPATHLEN];
 
-	if (verbose > 2)
-		rprintf(FINFO,"generator starting pid=%d count=%d\n",
-			(int)getpid(),flist->count);
+	if (verbose > 2) {
+		rprintf(FINFO, "generator starting pid=%ld count=%d\n",
+			(long)getpid(), flist->count);
+	}
 
 	if (verbose >= 2) {
 		rprintf(FINFO,
@@ -549,21 +547,23 @@ void generate_files(int f,struct file_list *flist,char *local_name,int f_recv)
 
 	for (i = 0; i < flist->count; i++) {
 		struct file_struct *file = flist->files[i];
-		mode_t saved_mode = file->mode;
-		if (!file->basename) continue;
+		struct file_struct copy;
 
+		if (!file->basename)
+			continue;
 		/* we need to ensure that any directories we create have writeable
 		   permissions initially so that we can create the files within
 		   them. This is then fixed after the files are transferred */
-		if (!am_root && S_ISDIR(file->mode)) {
-			file->mode |= S_IWUSR; /* user write */
+		if (!am_root && S_ISDIR(file->mode) && !(file->mode & S_IWUSR)) {
+			copy = *file;
 			/* XXX: Could this be causing a problem on SCO?  Perhaps their
 			 * handling of permissions is strange? */
+			copy.mode |= S_IWUSR; /* user write */
+			file = &copy;
 		}
 
-		recv_generator(local_name?local_name:f_name(file), flist,i,f);
-
-		file->mode = saved_mode;
+		recv_generator(local_name ? local_name : f_name_to(file, fbuf),
+			       file, i, f);
 
 		coroutine_resume_if(recv_files_coro, dos_select_read_ready(f) == 1);
 	}
@@ -581,9 +581,10 @@ void generate_files(int f,struct file_list *flist,char *local_name,int f_recv)
 
 	/* files can cycle through the system more than once
 	 * to catch initial checksum errors */
-	for (i=read_int(f_recv); i != -1; i=read_int(f_recv)) {
+	while ((i = get_redo_num()) != -1) {
 		struct file_struct *file = flist->files[i];
-		recv_generator(local_name?local_name:f_name(file), flist,i,f);
+		recv_generator(local_name ? local_name : f_name_to(file, fbuf),
+			       file, i, f);
 
 		coroutine_resume_if(recv_files_coro, dos_select_read_ready(f) == 1);
 	}
@@ -595,4 +596,19 @@ void generate_files(int f,struct file_list *flist,char *local_name,int f_recv)
 	write_int(f,-1);
 
 	coroutine_resume(recv_files_coro);
+
+	if (preserve_hard_links)
+		do_hard_links();
+
+	/* now we need to fix any directory permissions that were
+	 * modified during the transfer */
+	for (i = 0; i < flist->count; i++) {
+		struct file_struct *file = flist->files[i];
+		if (!file->basename || !S_ISDIR(file->mode)) continue;
+		recv_generator(local_name ? local_name : f_name(file),
+			       file, i, -1);
+	}
+
+	if (verbose > 2)
+		rprintf(FINFO,"generate_files finished\n");
 }

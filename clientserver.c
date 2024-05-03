@@ -27,17 +27,31 @@
 
 #include "rsync.h"
 
+extern int am_sender;
+extern int am_server;
+extern int am_daemon;
+extern int am_root;
 extern int module_id;
 extern int read_only;
 extern int verbose;
 extern int rsync_port;
-char *auth_user;
+extern int kludge_around_eof;
+extern int daemon_over_rsh;
+extern int list_only;
 extern int sanitize_paths;
 extern int filesfrom_fd;
 extern int remote_protocol;
 extern int protocol_version;
-extern struct exclude_struct **server_exclude_list;
+extern int io_timeout;
+extern int orig_umask;
+extern int no_detach;
+extern int default_af_hint;
+extern char *bind_address;
+extern struct exclude_list_struct server_exclude_list;
 extern char *exclude_path_prefix;
+extern char *config_file;
+
+char *auth_user;
 
 /**
  * Run a client connected to an rsyncd.  The alternative to this
@@ -57,8 +71,6 @@ int start_socket_client(char *host, char *path, int argc, char *argv[])
 {
 	int fd, ret;
 	char *p, *user=NULL;
-	extern char *bind_address;
-	extern int default_af_hint;
 
 	/* this is redundant with code in start_inband_exchange(), but
 	 * this short-circuits a problem before we open a socket, and
@@ -75,18 +87,10 @@ int start_socket_client(char *host, char *path, int argc, char *argv[])
 		*p = 0;
 	}
 
-	if (verbose >= 2) {
-		/* FIXME: If we're going to use a socket program for
-		 * testing, then this message is wrong.  We need to
-		 * say something like "(except really using %s)" */
-		rprintf(FINFO, "opening tcp connection to %s port %d\n",
-			host, rsync_port);
-	}
 	fd = open_socket_out_wrapped(host, rsync_port, bind_address,
 				     default_af_hint);
-	if (fd == -1) {
+	if (fd == -1)
 		exit_cleanup(RERR_SOCKETIO);
-	}
 	
 #ifdef MSDOS
 	/* Install signal handlers after Watt-32 has hooked SIGINT. */
@@ -105,10 +109,6 @@ int start_inband_exchange(char *user, char *path, int f_in, int f_out, int argc)
 	int sargc = 0;
 	char line[MAXPATHLEN];
 	char *p;
-	extern int kludge_around_eof;
-	extern int am_sender;
-	extern int daemon_over_rsh;
-	extern int list_only;
 
 	if (argc == 0 && !am_sender)
 		list_only = 1;
@@ -134,7 +134,7 @@ int start_inband_exchange(char *user, char *path, int f_in, int f_out, int argc)
 
 	sargs[sargc] = NULL;
 
-	io_printf(f_out, "@RSYNCD: %d\n", PROTOCOL_VERSION);
+	io_printf(f_out, "@RSYNCD: %d\n", protocol_version);
 
 	if (!read_line(f_in, line, sizeof(line)-1)) {
 		rprintf(FERROR, "rsync: did not see server greeting\n");
@@ -197,7 +197,7 @@ int start_inband_exchange(char *user, char *path, int f_in, int f_out, int argc)
 	io_printf(f_out, "\n");
 
 	if (protocol_version < 23) {
-		if (protocol_version == 22 || (protocol_version > 17 && !am_sender))
+		if (protocol_version == 22 || !am_sender)
 			io_start_multiplex_in(f_in);
 	}
 
@@ -223,10 +223,6 @@ static int rsync_module(int f_in, int f_out, int i)
 	int start_glob=0;
 	int ret;
 	char *request=NULL;
-	extern int am_sender;
-	extern int am_server;
-	extern int am_daemon;
-	extern int am_root;
 
 	if (!allow_access(addr, host, lp_hosts_allow(i), lp_hosts_deny(i))) {
 		rprintf(FERROR,"rsync denied on module %s from %s (%s)\n",
@@ -268,7 +264,7 @@ static int rsync_module(int f_in, int f_out, int i)
 
 	module_id = i;
 
-	am_root = (getuid() == 0);
+	am_root = (MY_UID() == 0);
 
 	if (am_root) {
 		p = lp_uid(i);
@@ -304,16 +300,19 @@ static int rsync_module(int f_in, int f_out, int i)
 		exclude_path_prefix = "";
 
 	p = lp_include_from(i);
-	add_exclude_file(&server_exclude_list, p, MISSING_FATAL, ADD_INCLUDE);
+	add_exclude_file(&server_exclude_list, p,
+			 XFLG_FATAL_ERRORS | XFLG_DEF_INCLUDE);
 
 	p = lp_include(i);
-	add_exclude_line(&server_exclude_list, p, ADD_INCLUDE);
+	add_exclude(&server_exclude_list, p,
+		    XFLG_WORD_SPLIT | XFLG_DEF_INCLUDE);
 
 	p = lp_exclude_from(i);
-	add_exclude_file(&server_exclude_list, p, MISSING_FATAL, ADD_EXCLUDE);
+	add_exclude_file(&server_exclude_list, p,
+			 XFLG_FATAL_ERRORS);
 
 	p = lp_exclude(i);
-	add_exclude_line(&server_exclude_list, p, ADD_EXCLUDE);
+	add_exclude(&server_exclude_list, p, XFLG_WORD_SPLIT);
 
 	exclude_path_prefix = NULL;
 
@@ -338,14 +337,14 @@ static int rsync_module(int f_in, int f_out, int i)
 			return -1;
 		}
 
-		if (!push_dir("/", 0)) {
+		if (!push_dir("/")) {
 			rsyserr(FERROR, errno, "chdir %s failed\n", lp_path(i));
 			io_printf(f_out, "@ERROR: chdir failed\n");
 			return -1;
 		}
 
 	} else {
-		if (!push_dir(lp_path(i), 0)) {
+		if (!push_dir(lp_path(i))) {
 			rsyserr(FERROR, errno, "chdir %s failed\n", lp_path(i));
 			io_printf(f_out, "@ERROR: chdir failed\n");
 			return -1;
@@ -385,7 +384,7 @@ static int rsync_module(int f_in, int f_out, int i)
 			return -1;
 		}
 
-		am_root = (getuid() == 0);
+		am_root = (MY_UID() == 0);
 	}
 
 	io_printf(f_out, "@RSYNCD: OK\n");
@@ -425,19 +424,6 @@ static int rsync_module(int f_in, int f_out, int i)
 		}
 	}
 
-	if (sanitize_paths) {
-		/*
-		 * Note that this is applied to all parameters, whether or not
-		 *    they are filenames, but no other legal parameters contain
-		 *    the forms that need to be sanitized so it doesn't hurt;
-		 *    it is not known at this point which parameters are files
-		 *    and which aren't.
-		 */
-		for (i = 1; i < argc; i++) {
-			sanitize_path(argv[i], NULL);
-		}
-	}
-
 	argp = argv;
 	ret = parse_arguments(&argc, (const char ***) &argp, 0);
 
@@ -459,11 +445,12 @@ static int rsync_module(int f_in, int f_out, int i)
 
 #ifndef DEBUG
 	/* don't allow the logs to be flooded too fast */
-	if (verbose > 1) verbose = 1;
+	if (verbose > lp_max_verbosity())
+		verbose = lp_max_verbosity();
 #endif
 
 	if (protocol_version < 23) {
-		if (protocol_version == 22 || (protocol_version > 17 && am_sender))
+		if (protocol_version == 22 || am_sender)
 			io_start_multiplex_out(f_out);
 	}
 
@@ -481,7 +468,6 @@ static int rsync_module(int f_in, int f_out, int i)
 	}
 
 	if (lp_timeout(i)) {
-		extern int io_timeout;
 		io_timeout = lp_timeout(i);
 	}
 
@@ -513,8 +499,6 @@ int start_daemon(int f_in, int f_out)
 	char line[200];
 	char *motd;
 	int i = -1;
-	extern char *config_file;
-	extern int am_server;
 
 	if (!lp_load(config_file, 0)) {
 		exit_cleanup(RERR_SYNTAX);
@@ -528,7 +512,7 @@ int start_daemon(int f_in, int f_out)
 		set_nonblocking(f_in);
 	}
 
-	io_printf(f_out, "@RSYNCD: %d\n", PROTOCOL_VERSION);
+	io_printf(f_out, "@RSYNCD: %d\n", protocol_version);
 
 	motd = lp_motd_file();
 	if (motd && *motd) {
@@ -585,10 +569,7 @@ int start_daemon(int f_in, int f_out)
 
 int daemon_main(void)
 {
-	extern char *config_file;
-	extern int orig_umask;
 	char *pid_file;
-	extern int no_detach;
 
 	if (is_a_socket(STDIN_FILENO)) {
 		int i;
@@ -622,7 +603,7 @@ int daemon_main(void)
 	if (((pid_file = lp_pid_file()) != NULL) && (*pid_file != '\0')) {
 		char pidbuf[16];
 		int fd;
-		int pid = (int) getpid();
+		pid_t pid = getpid();
 		cleanup_set_pid(pid);
 		if ((fd = do_open(lp_pid_file(), O_WRONLY|O_CREAT|O_TRUNC,
 					0666 & ~orig_umask)) == -1) {
@@ -630,7 +611,7 @@ int daemon_main(void)
 			rsyserr(FLOG, errno, "failed to create pid file %s", pid_file);
 			exit_cleanup(RERR_FILEIO);
 		}
-		snprintf(pidbuf, sizeof(pidbuf), "%d\n", pid);
+		snprintf(pidbuf, sizeof pidbuf, "%ld\n", (long)pid);
 		write(fd, pidbuf, strlen(pidbuf));
 		close(fd);
 	}

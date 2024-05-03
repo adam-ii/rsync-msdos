@@ -42,7 +42,6 @@ extern int32 checksum_seed;
 extern int checksum_seed;
 #endif
 
-
 extern int protocol_version;
 extern int verbose;
 
@@ -89,11 +88,9 @@ void setup_protocol(int f_out,int f_in)
 	}
 
 	if (am_server) {
-		if (read_batch || write_batch)
-			checksum_seed = 32761;
-		else
+		if (!checksum_seed)
 			checksum_seed = time(NULL);
-		write_int(f_out,checksum_seed);
+		write_int(f_out, checksum_seed);
 	} else {
 		checksum_seed = read_int(f_in);
 	}
