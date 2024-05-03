@@ -810,6 +810,7 @@ extern coro recv_files_coro;
 #ifdef MSDOS
 inline int getpid() { return 0; }
 inline int getuid() { return 0; }
+inline int getgid() { return 0; }
 #endif
 
 extern const char *io_write_phase, *io_read_phase;
