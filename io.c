@@ -162,7 +162,11 @@ void set_msg_fd_out(int fd)
 }
 
 /* Add a message to the pending MSG_* list. */
+#if SIZEOF_INT == 2
+static void msg_list_add(int32 code, char *buf, int len)
+#else
 static void msg_list_add(int code, char *buf, int len)
+#endif
 {
 	struct msg_list *ml;
 
@@ -264,7 +268,11 @@ int msg_list_push(int flush_it_all)
 
 	while (msg_list_head) {
 		struct msg_list *ml = msg_list_head;
+#ifdef DISABLE_FORK
+		int n = dos_write_fd(msg_fd_out, ml->buf + written, ml->len - written);
+#else
 		int n = write(msg_fd_out, ml->buf + written, ml->len - written);
+#endif
 		if (n < 0) {
 			if (errno == EINTR)
 				continue;
